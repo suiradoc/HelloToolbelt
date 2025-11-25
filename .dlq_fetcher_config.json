@@ -1,0 +1,7 @@
+{
+  "jar_path": "/Users/cody.white/Documents/DLQ_Fetcher.jar",
+  "queue_name": "dead_letter_integrations_prod",
+  "sheets_url": "https://docs.google.com/spreadsheets/d/1UZzy2s2VjmgOwXDUcoiAZrAnG1IZ5PS3JtUKmcO9y88/edit?gid=1325973864#gid=1325973864",
+  "service_account_path": "/Users/cody.white/Documents/HelloToolbelt/App/cs-ops-473314-5a004148e383.json",
+  "sheet_tab_name": "DLQ Parsing"
+}

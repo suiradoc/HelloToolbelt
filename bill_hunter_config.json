@@ -1,0 +1,52 @@
+{
+  "postgres": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "helloheart",
+    "user": "your_user",
+    "password": "your_password"
+  },
+  "clients_db": {
+    "clients": [
+      {
+        "name": "Example Client",
+        "id": "example_client",
+        "matching_rules": {
+          "company_name": [
+            "Company",
+            "Employer",
+            "Client Name"
+          ],
+          "employee_id": [
+            "Employee ID",
+            "Emp ID",
+            "ID"
+          ],
+          "first_name": [
+            "First Name"
+          ],
+          "last_name": [
+            "Last Name"
+          ],
+          "date_of_birth": [
+            "DOB",
+            "Date of Birth"
+          ]
+        },
+        "transformation_rules": {
+          "strip_spaces": [
+            "employee_id"
+          ],
+          "uppercase": [
+            "company_name"
+          ]
+        }
+      }
+    ]
+  },
+  "db_host": "localhost",
+  "db_port": "5432",
+  "db_name": "",
+  "db_user": "",
+  "db_password": ""
+}
