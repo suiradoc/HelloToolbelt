@@ -26,8 +26,8 @@ except ImportError:
 # AUTO-UPDATE CONFIGURATION
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
-GITHUB_REPO = "yourusername/HelloToolbelt"
-APP_VERSION = "2.1.2"  # Keep this in sync with self.version in MultiToolLauncher
+GITHUB_REPO = "suiradoc/HelloToolbelt"
+APP_VERSION = "1.1.0"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -36,7 +36,6 @@ try:
     AUTH_AVAILABLE = True
 except ImportError:
     AUTH_AVAILABLE = False
-    print("Auth module not found - running without authentication")
 
 # Check for admin tab modules
 try:
@@ -44,7 +43,6 @@ try:
     ADMIN_TAB_AVAILABLE = True
 except ImportError:
     ADMIN_TAB_AVAILABLE = False
-    print("Admin tab module not found - admin tab disabled")
 
 # Check for user management module
 try:
@@ -52,7 +50,6 @@ try:
     USER_MANAGEMENT_AVAILABLE = True
 except ImportError:
     USER_MANAGEMENT_AVAILABLE = False
-    print("User management module not found")
 
 # Check for user audit module
 try:
@@ -60,7 +57,6 @@ try:
     USER_AUDIT_AVAILABLE = True
 except ImportError:
     USER_AUDIT_AVAILABLE = False
-    print("User audit module not found")
 
 # Check for keyring availability
 try:
@@ -68,7 +64,6 @@ try:
     KEYRING_AVAILABLE = True
 except ImportError:
     KEYRING_AVAILABLE = False
-
 
 # =============================================================================
 # AUTO-UPDATE SYSTEM
@@ -102,7 +97,6 @@ class AutoUpdater:
         Returns True if a newer version is available.
         """
         if not URLLIB_AVAILABLE:
-            print("Auto-update: urllib not available")
             return False
         
         try:
@@ -141,21 +135,15 @@ class AutoUpdater:
             latest = self._parse_version(self.latest_version)
             
             if latest > current:
-                print(f"Auto-update: New version available: {self.latest_version} (current: {self.current_version})")
                 return True
             else:
-                if not silent:
-                    print(f"Auto-update: Already on latest version ({self.current_version})")
                 return False
                 
-        except urllib.error.URLError as e:
-            print(f"Auto-update: Network error checking for updates: {e}")
+        except urllib.error.URLError:
             return False
-        except json.JSONDecodeError as e:
-            print(f"Auto-update: Error parsing update response: {e}")
+        except json.JSONDecodeError:
             return False
-        except Exception as e:
-            print(f"Auto-update: Unexpected error checking for updates: {e}")
+        except Exception:
             return False
     
     def show_update_dialog(self, parent=None):
@@ -182,7 +170,6 @@ class AutoUpdater:
         Returns the path to the downloaded file, or None on failure.
         """
         if not self.download_url:
-            print("Auto-update: No download URL available")
             return None
         
         try:
@@ -190,8 +177,6 @@ class AutoUpdater:
             temp_dir = tempfile.mkdtemp(prefix='hellotoolbelt_update_')
             filename = os.path.basename(self.download_url)
             download_path = os.path.join(temp_dir, filename)
-            
-            print(f"Auto-update: Downloading from {self.download_url}")
             
             def report_progress(block_num, block_size, total_size):
                 if progress_callback and total_size > 0:
@@ -204,11 +189,9 @@ class AutoUpdater:
                 reporthook=report_progress
             )
             
-            print(f"Auto-update: Downloaded to {download_path}")
             return download_path
             
-        except Exception as e:
-            print(f"Auto-update: Error downloading update: {e}")
+        except Exception:
             return None
     
     def install_update(self, download_path):
@@ -217,7 +200,6 @@ class AutoUpdater:
         This will close the current application and launch the installer.
         """
         if not download_path or not os.path.exists(download_path):
-            print("Auto-update: Invalid download path")
             return False
         
         try:
@@ -226,14 +208,12 @@ class AutoUpdater:
             elif sys.platform == 'darwin':
                 return self._install_macos(download_path)
             else:
-                print("Auto-update: Unsupported platform for auto-install")
                 # Open file manager to the download location
                 if sys.platform.startswith('linux'):
                     subprocess.Popen(['xdg-open', os.path.dirname(download_path)])
                 return False
                 
-        except Exception as e:
-            print(f"Auto-update: Error installing update: {e}")
+        except Exception:
             return False
     
     def _install_windows(self, download_path):
@@ -294,11 +274,9 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                 creationflags=subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
             )
             
-            print("Auto-update: Update script launched, exiting application...")
             return True
             
-        except Exception as e:
-            print(f"Auto-update: Windows installation error: {e}")
+        except Exception:
             return False
     
     def _install_macos(self, download_path):
@@ -316,14 +294,12 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                         new_app_path = os.path.join(extract_dir, item)
                         break
                 else:
-                    print("Auto-update: No .app bundle found in archive")
                     return False
                 
                 # Get current app path
                 if getattr(sys, 'frozen', False):
                     current_app = os.path.dirname(os.path.dirname(os.path.dirname(sys.executable)))
                 else:
-                    print("Auto-update: Not running as frozen app")
                     return False
                 
                 # Create shell script to replace the app
@@ -354,10 +330,8 @@ rm -- "$0"
                 )
                 return False  # Don't auto-exit, user needs to do manual installation
                 
-        except Exception as e:
-            print(f"Auto-update: macOS installation error: {e}")
+        except Exception:
             return False
-
 
 def check_for_updates_on_startup():
     """
@@ -366,11 +340,9 @@ def check_for_updates_on_startup():
     Returns True if an update was initiated (app should exit).
     """
     if not AUTO_UPDATE_ENABLED:
-        print("Auto-update: Disabled in configuration")
         return False
     
     if GITHUB_REPO == "yourusername/HelloToolbelt":
-        print("Auto-update: GitHub repo not configured (still using default)")
         return False
     
     try:
@@ -455,10 +427,8 @@ def check_for_updates_on_startup():
         
         return False
         
-    except Exception as e:
-        print(f"Auto-update: Error during startup check: {e}")
+    except Exception:
         return False
-
 
 class CredentialManager:
     """
@@ -487,7 +457,7 @@ class CredentialManager:
                 self._cache = json.loads(data)
                 return self._cache
         except Exception as e:
-            print(f"Error retrieving credentials: {e}")
+            pass
         
         return {}
     
@@ -502,7 +472,7 @@ class CredentialManager:
             self._cache = credentials  # Update cache
             return True
         except Exception as e:
-            print(f"Error saving credentials: {e}")
+            pass
             return False
     
     def store_aws_credentials(self, access_key, secret_key, region):
@@ -544,7 +514,6 @@ class CredentialManager:
             if key in credentials:
                 del credentials[key]
                 results[key] = True
-                print(f"✓ Deleted {key}")
             else:
                 results[key] = False
         
@@ -558,7 +527,6 @@ class CredentialManager:
         if 'db_password' in credentials:
             del credentials['db_password']
             self._save_all_credentials(credentials)
-            print(f"✓ Deleted db_password")
             return True
         return False
 
@@ -656,7 +624,7 @@ class LoadingScreen:
                     self._icon_loaded = True
                     break
                 except Exception as e:
-                    print(f"Could not load icon from {icon_path}: {e}")
+                    pass
         
         # Create icon
         if self._icon_loaded and self._icon_images:
@@ -747,7 +715,7 @@ class LoadingScreen:
         except tk.TclError:
             pass
         except Exception as e:
-            print(f"Error destroying loading screen: {e}")
+            pass
 
 class SplashScreen:
     """Splash screen with heartbeat animation"""
@@ -812,7 +780,7 @@ class SplashScreen:
                         self.splash.iconbitmap(icon_path)
                         break
         except Exception as e:
-            print(f"Could not set icon: {e}")
+            pass
     
     def _load_heartbeat_icons(self):
         """Load icon in multiple sizes for heartbeat animation"""
@@ -854,10 +822,9 @@ class SplashScreen:
                         self._icon_images[name] = ImageTk.PhotoImage(resized, master=self.splash)
                     
                     self._icon_loaded = True
-                    print(f"Loaded heartbeat icons from: {icon_path}")
                     return True
                 except Exception as e:
-                    print(f"Could not load icon {icon_path}: {e}")
+                    pass
                     continue
         
         return False
@@ -905,7 +872,7 @@ class SplashScreen:
         # Version
         self.canvas.create_text(
             200, 175,
-            text="Version 2.1.2",
+            text="Version 1.1.0",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
@@ -998,7 +965,7 @@ class SplashScreen:
             # Window destroyed
             self._animation_running = False
         except Exception as e:
-            print(f"Animation error: {e}")
+            pass
             self._animation_running = False
     
     def update_progress(self, percentage):
@@ -1009,7 +976,7 @@ class SplashScreen:
             self.canvas.coords(self._progress_fill, 60, 250, progress_width, 258)
             self.splash.update()
         except Exception as e:
-            print(f"Error updating progress: {e}")
+            pass
     
     def update_status(self, text, percentage=None):
         """Update the loading status text and optionally progress"""
@@ -1019,9 +986,9 @@ class SplashScreen:
                 self.update_progress(percentage)
             self.splash.update()
         except tk.TclError:
-            print("Splash screen update failed (window destroyed)")
+            pass
         except Exception as e:
-            print(f"Error updating splash screen: {e}")
+            pass
     
     def destroy(self):
         """Close the splash screen with smooth fade out"""
@@ -1045,13 +1012,13 @@ class SplashScreen:
                     except tk.TclError:
                         break
                     except Exception as e:
-                        print(f"Error during fade animation: {e}")
+                        pass
                         break
             self.splash.destroy()
         except tk.TclError:
             pass
         except Exception as e:
-            print(f"Error destroying splash screen: {e}")
+            pass
 
 class PasswordDialog:
     def __init__(self, parent, colors):
@@ -1102,8 +1069,6 @@ class PasswordDialog:
         self.dialog.bind('<KP_Enter>', lambda e: self.submit())  # Keypad Enter
         self.dialog.bind('<Escape>', lambda e: self.cancel())
         
-        print(f"Password dialog created at position: {self.dialog.geometry()}")
-    
     def focus_password_entry(self):
         """Focus on password entry field"""
         try:
@@ -1118,9 +1083,8 @@ class PasswordDialog:
             # Make sure it has keyboard focus
             self.password_entry.selection_clear()
             
-            print("Password entry focused")  # Debug
         except Exception as e:
-            print(f"Error focusing password entry: {e}")
+            pass
     
     def center_dialog(self):
         """Center the dialog on the main window or screen"""
@@ -1144,17 +1108,13 @@ class PasswordDialog:
                 x = main_x + (main_width // 2) - (dialog_width // 2)
                 y = main_y + (main_height // 2) - (dialog_height // 2)
                 
-                print(f"Main window at: {main_x}x{main_y}, size: {main_width}x{main_height}")
-                print(f"Calculated dialog position: {x}x{y}")
-                
             except Exception as e:
-                print(f"Could not get main window position: {e}")
+                pass
                 # Fallback to screen center
                 screen_width = self.dialog.winfo_screenwidth()
                 screen_height = self.dialog.winfo_screenheight()
                 x = (screen_width // 2) - (dialog_width // 2)
                 y = (screen_height // 2) - (dialog_height // 2)
-                print(f"Using screen center: {x}x{y}")
             
             # Ensure dialog stays on screen
             screen_width = self.dialog.winfo_screenwidth()
@@ -1165,8 +1125,6 @@ class PasswordDialog:
             x = max(margin, min(x, screen_width - dialog_width - margin))
             y = max(margin, min(y, screen_height - dialog_height - margin))
             
-            print(f"Final dialog position: {x}x{y}")
-            
             # Set the geometry with new size
             self.dialog.geometry(f"{dialog_width}x{dialog_height}+{x}+{y}")
             
@@ -1176,7 +1134,7 @@ class PasswordDialog:
             self.dialog.attributes('-topmost', True)
             
         except Exception as e:
-            print(f"Error centering dialog: {e}")
+            pass
             # Emergency fallback - larger size
             self.dialog.geometry("500x350+100+100")
     
@@ -1303,7 +1261,6 @@ class PasswordDialog:
         """Handle password submission"""
         try:
             password = self.password_entry.get()
-            print(f"Password submitted: {'*' * len(password)}")  # Debug print (don't show actual password)
             
             if not password:
                 self.show_error("Please enter a password")
@@ -1311,16 +1268,16 @@ class PasswordDialog:
             
             # Check password (you can change this password)
             if self.verify_password(password):
-                print("Password verification successful")  # Debug print
+                pass
                 self.result = True
                 self.dialog.destroy()
             else:
-                print("Password verification failed")  # Debug print
+                pass
                 self.show_error("Incorrect password")
                 self.password_entry.delete(0, tk.END)
                 self.password_entry.focus_set()
         except Exception as e:
-            print(f"Error in submit: {e}")
+            pass
             self.result = False
             try:
                 self.dialog.destroy()
@@ -1341,22 +1298,21 @@ class PasswordDialog:
     def cancel(self):
         """Handle dialog cancellation"""
         try:
-            print("Password dialog cancelled")  # Debug print
+            pass
             self.result = False
             self.dialog.destroy()
         except Exception as e:
-            print(f"Error in cancel: {e}")
+            pass
             self.result = False
     
     def wait_for_result(self):
         """Wait for dialog result"""
         try:
-            print("Waiting for dialog window...")  # Debug print
+            pass
             self.dialog.wait_window()
-            print(f"Dialog closed, result: {self.result}")  # Debug print
             return self.result
         except Exception as e:
-            print(f"Error in wait_for_result: {e}")
+            pass
             return False
 
 class MultiToolLauncher:
@@ -1545,55 +1501,40 @@ class MultiToolLauncher:
         # Create tabs for each tool based on tier
         self.create_tool_tabs()
         
-        print("[DEBUG] create_tool_tabs completed")
-        
         self._update_loading(80, "Setting up options...")
         
         # Add admin tab if user is admin and any admin module is available
         if self.auth and self.auth.is_admin and (ADMIN_TAB_AVAILABLE or USER_MANAGEMENT_AVAILABLE or USER_AUDIT_AVAILABLE):
-            print("[DEBUG] Creating admin tab (user is admin)...")
+            pass
             self.create_admin_tab()
-            print("[DEBUG] Admin tab created")
         
         # Add options tab (will be moved to end after creation)
-        print("[DEBUG] Creating options tab...")
         self.create_options_tab()
-        print("[DEBUG] Options tab created")
         
         # Move options tab to the end
-        print("[DEBUG] Moving options tab to end...")
         self.move_options_tab_to_end()
-        print("[DEBUG] Options tab moved")
         
         self._update_loading(90, "Finalizing interface...")
         
         # Pre-render all tabs to eliminate flash on first view
-        print("[DEBUG] Pre-rendering tabs...")
         self.pre_render_all_tabs()
-        print("[DEBUG] Pre-render complete")
         
         # Set window icon and center it
-        print("[DEBUG] Centering window...")
         self.center_window()
-        print("[DEBUG] Window centered")
         
         # Save settings when app closes
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         self._update_loading(100, "Ready!")
         
-        print("[DEBUG] Setting up main window display...")
-        
         # Destroy splash if it exists
         if self.splash:
             try:
                 self.splash.destroy()
-                print("[DEBUG] Splash destroyed")
             except Exception as e:
-                print(f"[DEBUG] Error destroying splash: {e}")
+                pass
         
         # Show main window directly
-        print("[DEBUG] Showing main window...")
         try:
             self.root.title("Hello Toolbelt")
             self.root.geometry("1200x1200")
@@ -1602,26 +1543,20 @@ class MultiToolLauncher:
             try:
                 # Try to maximize the window (works on most platforms)
                 self.root.state('zoomed')
-                print("[DEBUG] Window maximized")
             except tk.TclError:
                 # If 'zoomed' doesn't work (some Linux systems), try alternative
                 try:
                     self.root.attributes('-zoomed', True)
-                    print("[DEBUG] Window maximized (alternative method)")
                 except:
                     # If that doesn't work either, just use the geometry size
-                    print("[DEBUG] Auto-maximize not supported, using default size")
                     pass
             
             self.root.deiconify()
             self.root.lift()
             self.root.focus_force()
-            print("[DEBUG] Main window displayed")
         except Exception as e:
-            print(f"[DEBUG] Error showing main window: {e}")
+            pass
         
-        print("[DEBUG] __init__ completed")
-
     def _update_loading(self, value, status_text):
         """Update either splash screen or loading callback with progress"""
         if self.loading_callback:
@@ -1674,15 +1609,14 @@ class MultiToolLauncher:
         """Emergency fallback to show main window if needed"""
         try:
             if not self.root.winfo_viewable():
-                print("Emergency window show triggered - main window not visible")
+                pass
                 self.root.deiconify()
                 self.root.lift()
                 self.root.focus_force()
                 self.root.update()
-                print("Emergency show completed")
             # Window is already visible, no action needed
         except Exception as e:
-            print(f"Emergency show check failed: {e}")
+            pass
 
     def set_main_window_icon(self):
         """Set the main window icon"""
@@ -1832,7 +1766,6 @@ class MultiToolLauncher:
         except Exception as e:
             # Fallback if logging setup fails
             self.logger = None
-            print(f"Warning: Could not setup logging: {e}")
 
     def log_error(self, message, exception=None):
         """Safe error logging"""
@@ -1842,14 +1775,14 @@ class MultiToolLauncher:
             else:
                 self.logger.error(message)
         else:
-            print(f"ERROR: {message}")
+            pass
 
     def log_info(self, message):
         """Safe info logging"""
         if self.logger:
             self.logger.info(message)
         else:
-            print(f"INFO: {message}")
+            pass
 
     @contextmanager
     def safe_settings_access(self):
@@ -2146,7 +2079,6 @@ class MultiToolLauncher:
                     self.db_port.set(config.get('port', '5432'))
                     self.db_name.set(config.get('database', ''))
                     self.db_user.set(config.get('username', ''))
-                    print(f"HelloToolbelt: Loaded DB config from file")
             
             # Load AWS config from file (not secret key)
             aws_config_file = os.path.join(os.path.expanduser('~'), '.hellotoolbelt_aws_config.json')
@@ -2154,9 +2086,8 @@ class MultiToolLauncher:
                 with open(aws_config_file, 'r') as f:
                     aws_config = json.load(f)
                     self.aws_region.set(aws_config.get('region', 'us-east-1'))
-                    print(f"HelloToolbelt: Loaded AWS config from file")
         except Exception as e:
-            print(f"HelloToolbelt: Error loading config files: {e}")
+            pass
     
     def ensure_credentials_loaded(self):
         """Load credentials from keyring if not already loaded. Call this when credentials are needed."""
@@ -2164,7 +2095,6 @@ class MultiToolLauncher:
             return
         
         self._credentials_loaded = True
-        print("HelloToolbelt: Loading credentials from keyring...")
         
         # Now load from keyring
         self.load_db_config()
@@ -2181,18 +2111,16 @@ class MultiToolLauncher:
                     self.db_port.set(config.get('port', '5432'))
                     self.db_name.set(config.get('database', ''))
                     self.db_user.set(config.get('username', ''))
-                    print(f"HelloToolbelt: Loaded DB config from file")
             
             # Load password using CredentialManager
             password = self.credential_manager.get_db_credentials()
             if password:
                 self.db_password.set(password)
-                print(f"HelloToolbelt: Loaded password from keyring (length: {len(password)})")
             else:
-                print("HelloToolbelt: No password found in keyring")
+                pass
                 
         except Exception as e:
-            print(f"HelloToolbelt: Error loading DB config: {e}")
+            pass
     
     def save_db_config(self):
         """Save database configuration to file and password to keyring"""
@@ -2206,26 +2134,24 @@ class MultiToolLauncher:
             config_file = os.path.join(os.path.expanduser('~'), '.hellotoolbelt_db_config.json')
             with open(config_file, 'w') as f:
                 json.dump(config, f, indent=2)
-            print(f"HelloToolbelt: Saved DB config to file")
             
             # Save password using CredentialManager
             password = self.db_password.get().strip()
-            print(f"HelloToolbelt: Attempting to save password (length: {len(password)})")
             
             if password:
                 success = self.credential_manager.store_db_credentials(password)
                 if success:
-                    print(f"HelloToolbelt: Password saved to keyring successfully")
+                    pass
                     messagebox.showinfo("Saved", "Database configuration saved!\n\n(Password stored securely in system keychain)")
                 else:
-                    print(f"HelloToolbelt: Keyring not available")
+                    pass
                     messagebox.showinfo("Saved", "Database configuration saved!\n\n(Password saved in memory only)")
             else:
-                print(f"HelloToolbelt: No password to save")
+                pass
                 messagebox.showinfo("Saved", "Database configuration saved!\n\n(No password provided)")
                 
         except Exception as e:
-            print(f"HelloToolbelt: Error saving config: {e}")
+            pass
             messagebox.showerror("Error", f"Could not save config:\n{str(e)}")
     
     def test_db_connection(self):
@@ -2549,7 +2475,6 @@ class MultiToolLauncher:
         """Prompt user for Tier 3 password"""
         try:
             colors = self.get_colors()
-            print("Creating password dialog...")  # Debug print
             
             # Ensure main window is properly displayed and focused
             self.root.update_idletasks()
@@ -2565,17 +2490,14 @@ class MultiToolLauncher:
             
         except Exception as e:
             self.log_error("Error creating password dialog", e)
-            print(f"Error in prompt_for_tier3_password: {e}")
             return False
     
     def _create_password_dialog(self, colors):
         """Helper method to create the password dialog"""
         try:
             dialog = PasswordDialog(self.root, colors)
-            print("Password dialog created, waiting for result...")  # Debug print
             
             result = dialog.wait_for_result()
-            print(f"Password dialog result: {result}")  # Debug print
             
             self._dialog_result = result
             
@@ -2583,7 +2505,7 @@ class MultiToolLauncher:
             self._handle_password_result(result)
             
         except Exception as e:
-            print(f"Error in _create_password_dialog: {e}")
+            pass
             self._dialog_result = False
             self._handle_password_result(False)
     
@@ -2592,7 +2514,6 @@ class MultiToolLauncher:
         try:
             if success:
                 # Password correct, unlock Tier 3 permanently and set current tier
-                print("Password correct, granting Tier 3 access")  # Debug print
                 self.tier3_unlocked = True  # Mark as permanently unlocked
                 self.current_tier = 'Tier 3'
                 
@@ -2608,11 +2529,10 @@ class MultiToolLauncher:
                                       "Tier 3 access granted and saved! All tools are now available.\n\nTier 3 will remain unlocked for future sessions.",
                                       parent=self.root)
                 except Exception as e:
-                    print(f"Error showing success message: {e}")
+                    pass
                     
             else:
                 # Password incorrect or cancelled, revert selection
-                print("Password incorrect or cancelled, reverting to current tier")  # Debug print
                 self.tier_var.set(self.current_tier)
                 
                 # Show failure message
@@ -2621,9 +2541,9 @@ class MultiToolLauncher:
                                          "Incorrect password or access cancelled.\nRemaining on current tier.",
                                          parent=self.root)
                 except Exception as e:
-                    print(f"Error showing warning message: {e}")
+                    pass
         except Exception as e:
-            print(f"Error in _handle_password_result: {e}")
+            pass
             # Revert to current tier on any error
             try:
                 self.tier_var.set(self.current_tier)
@@ -2634,34 +2554,29 @@ class MultiToolLauncher:
         """Handle tier selection change with password protection"""
         try:
             new_tier = self.tier_var.get()
-            print(f"Tier change requested: {self.current_tier} -> {new_tier}")  # Debug print
             
             if new_tier != self.current_tier:
                 # If trying to switch to Tier 3, check if already unlocked or require password
                 if new_tier == 'Tier 3':
                     if self.tier3_unlocked:
                         # Already unlocked, allow immediate access
-                        print("Tier 3 already unlocked, granting immediate access")  # Debug print
                         self.current_tier = new_tier
                         self.refresh_tabs_for_tier()
                         self.save_settings()  # Save the tier preference
                     else:
                         # Not unlocked yet, require password
-                        print("Tier 3 not unlocked, prompting for password...")  # Debug print
                         self.prompt_for_tier3_password()
                     
                 else:
                     # Switching from Tier 3 to Tier 2 (no password needed, but Tier 3 stays unlocked)
-                    print(f"Switching to {new_tier} (no password required)")  # Debug print
                     self.current_tier = new_tier
                     self.refresh_tabs_for_tier()
                     self.save_settings()  # Save the tier preference
             else:
-                print("No tier change needed")  # Debug print
+                pass
                 
         except Exception as e:
             self.log_error("Error handling tier change", e)
-            print(f"Error in on_tier_change: {e}")
             # Revert to previous tier on error
             try:
                 self.tier_var.set(self.current_tier)
@@ -2682,12 +2597,10 @@ class MultiToolLauncher:
 
     def create_tool_tabs(self):
         """Create a tab for each tool with enhanced styling based on tier"""
-        print("[DEBUG] create_tool_tabs() started")
         colors = self.get_colors()
         
         # Get tools for current tier
         tools_to_show = self.get_tools_for_tier()
-        print(f"[DEBUG] Tools to show: {len(tools_to_show)}")
         
         # Define which tools should be in the Client Setup subtabs
         client_setup_tools = ['Config', 'CronJob', 'Base64']
@@ -2700,35 +2613,29 @@ class MultiToolLauncher:
         file_tools_configs = [tool for tool in tools_to_show if tool['name'] in file_tools]
         other_tools = [tool for tool in tools_to_show if tool['name'] not in client_setup_tools and tool['name'] not in file_tools]
         
-        print(f"[DEBUG] client_setup_configs: {len(client_setup_configs)}")
-        print(f"[DEBUG] file_tools_configs: {len(file_tools_configs)}")
-        print(f"[DEBUG] other_tools: {len(other_tools)}")
-        
         # Create Client Setup tab with subtabs if there are any client setup tools
         if client_setup_configs:
-            print("[DEBUG] Creating Client Setup tab...")
+            pass
             self._create_nested_tab_group(
                 group_name="⚙️ Client Setup",
                 tools=client_setup_configs,
                 notebook_attr='client_notebook',
                 event_handler=self.on_subtab_changed
             )
-            print("[DEBUG] Client Setup tab created")
         
         # Create File Tools tab with subtabs if there are any file tools
         if file_tools_configs:
-            print("[DEBUG] Creating File Tools tab...")
+            pass
             self._create_nested_tab_group(
                 group_name="📁 File Tools",
                 tools=file_tools_configs,
                 notebook_attr='file_tools_notebook',
                 event_handler=self.on_file_tools_subtab_changed
             )
-            print("[DEBUG] File Tools tab created")
         
         # Create regular tabs for other tools
         for tool_config in other_tools:
-            print(f"[DEBUG] Creating tab for: {tool_config['name']}")
+            pass
             # Create tab frame with styling
             tab_frame = ttk.Frame(self.notebook, style='Tool.TFrame')
             
@@ -2746,13 +2653,9 @@ class MultiToolLauncher:
             if not success:
                 # If loading failed, show error message
                 self.create_error_tab(container_frame, tool_config)
-            print(f"[DEBUG] Tab created for: {tool_config['name']}")
         
-        print("[DEBUG] create_tool_tabs() completed")
-    
     def _create_nested_tab_group(self, group_name, tools, notebook_attr, event_handler):
         """Helper method to create a nested notebook tab group"""
-        print(f"[DEBUG] _create_nested_tab_group: {group_name} with {len(tools)} tools")
         colors = self.get_colors()
         
         # Create main group tab
@@ -2771,7 +2674,7 @@ class MultiToolLauncher:
         
         # Add subtabs for each tool
         for tool_config in tools:
-            print(f"[DEBUG] Loading subtab tool: {tool_config['name']} from {tool_config.get('file', 'unknown')}")
+            pass
             # Create subtab frame
             subtab_frame = ttk.Frame(nested_notebook, style='Tool.TFrame')
             
@@ -2784,17 +2687,12 @@ class MultiToolLauncher:
             container_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
             
             # Try to load and instantiate the tool
-            print(f"[DEBUG] Calling load_tool_in_tab for: {tool_config['name']}")
             success = self.load_tool_in_tab(container_frame, tool_config)
-            print(f"[DEBUG] load_tool_in_tab returned: {success} for {tool_config['name']}")
             
             if not success:
                 # If loading failed, show error message
                 self.create_error_tab(container_frame, tool_config)
         
-        print(f"[DEBUG] _create_nested_tab_group completed: {group_name}")
-
-
     def refresh_tabs_for_tier(self):
         """Refresh tabs based on tier selection"""
         try:
@@ -4060,31 +3958,26 @@ class MultiToolLauncher:
     def load_tool_module_safe(self, file_path):
         """Safely load a Python module with timeout and error handling"""
         try:
-            print(f"[DEBUG] load_tool_module_safe: {file_path}")
+            pass
             if not os.path.exists(file_path):
                 self.log_error(f"Tool file does not exist: {file_path}")
                 return None
             
             # Check file size (prevent loading extremely large files)
             file_size = os.path.getsize(file_path)
-            print(f"[DEBUG] File size: {file_size} bytes")
             if file_size > 10 * 1024 * 1024:  # 10MB limit
                 self.log_error(f"Tool file too large: {file_path} ({file_size} bytes)")
                 return None
             
-            print(f"[DEBUG] Creating module spec...")
             spec = importlib.util.spec_from_file_location("tool_module", file_path)
             if not spec or not spec.loader:
                 self.log_error(f"Could not create module spec for: {file_path}")
                 return None
             
-            print(f"[DEBUG] Creating module from spec...")
             module = importlib.util.module_from_spec(spec)
             
             # Execute module loading
-            print(f"[DEBUG] Executing module (this may hang if module has blocking code)...")
             spec.loader.exec_module(module)
-            print(f"[DEBUG] Module executed successfully")
             
             return module
             
@@ -4095,7 +3988,6 @@ class MultiToolLauncher:
     def load_tool_in_tab(self, parent_frame, tool_config):
         """Enhanced tool loading with comprehensive error handling"""
         tool_name = tool_config['name']
-        print(f"[DEBUG] load_tool_in_tab START: {tool_name}")
         
         # Prevent concurrent loading of the same tool
         if tool_name in self._loading_tools:
@@ -4125,25 +4017,18 @@ class MultiToolLauncher:
                 self._loading_tools.discard(tool_name)
                 return False
             
-            print(f"[DEBUG] Found script at: {script_path}")
-            
             # Load the module with timeout protection
-            print(f"[DEBUG] Loading module...")
             module = self.load_tool_module_safe(script_path)
-            print(f"[DEBUG] Module loaded: {module is not None}")
             if not module:
                 self._loading_tools.discard(tool_name)
                 return False
             
             # Get the class with validation
-            print(f"[DEBUG] Getting class: {tool_config['class']}")
             tool_class = getattr(module, tool_config['class'], None)
             if not tool_class:
                 self.log_error(f"Class {tool_config['class']} not found in {tool_config['file']}")
                 self._loading_tools.discard(tool_name)
                 return False
-            
-            print(f"[DEBUG] Class found, creating EnhancedMockRoot...")
             
             # Enhanced MockRoot with better compatibility
             class EnhancedMockRoot(tk.Frame):
@@ -4243,44 +4128,37 @@ class MultiToolLauncher:
                         return (0, 0, 0)
             
             # Create the mock root for the tool
-            print(f"[DEBUG] Creating EnhancedMockRoot instance...")
             tool_root = EnhancedMockRoot(parent_frame, self)
-            print(f"[DEBUG] EnhancedMockRoot created successfully")
             
             # Instantiate the tool with error handling
             try:
-                print(f"[DEBUG] Instantiating tool class: {tool_config['class']}...")
+                pass
                 tool_instance = tool_class(tool_root)
-                print(f"[DEBUG] Tool class instantiated successfully")
             except Exception as e:
                 self.log_error(f"Error instantiating tool {tool_name}", e)
-                print(f"[DEBUG] ERROR instantiating tool: {e}")
                 tool_root.destroy()
                 self._loading_tools.discard(tool_name)
                 return False
             
             # Configure tool for dark mode if supported
-            print(f"[DEBUG] Configuring tool...")
             if hasattr(tool_instance, 'is_dark_mode'):
                 tool_instance.is_dark_mode = self.is_dark_mode
             
             # Force immediate and complete rendering of tool interface
             # Wrap in try/except to prevent hangs
-            print(f"[DEBUG] Updating UI...")
             try:
                 tool_root.update_idletasks()
             except Exception as e:
-                print(f"[DEBUG] update_idletasks failed: {e}")
+                pass
             
             try:
                 parent_frame.update_idletasks()
             except Exception as e:
-                print(f"[DEBUG] parent update_idletasks failed: {e}")
+                pass
             
             # Skip the update() calls as they can cause event loop issues
             # tool_root.update()
             # parent_frame.update()
-            print(f"[DEBUG] Tool loading complete for: {tool_name}")
             
             # Recursively update all child widgets
             self._force_render_recursive(tool_root)
@@ -4408,16 +4286,8 @@ To fix this:
         # Check if we have the new subtab modules
         has_subtabs = USER_MANAGEMENT_AVAILABLE or USER_AUDIT_AVAILABLE
         
-        print("[DEBUG] ========== ADMIN TAB CREATION ==========")
-        print(f"[DEBUG] ADMIN_TAB_AVAILABLE: {ADMIN_TAB_AVAILABLE}")
-        print(f"[DEBUG] USER_MANAGEMENT_AVAILABLE: {USER_MANAGEMENT_AVAILABLE}")
-        print(f"[DEBUG] USER_AUDIT_AVAILABLE: {USER_AUDIT_AVAILABLE}")
-        print(f"[DEBUG] has_subtabs: {has_subtabs}")
-        print("[DEBUG] =======================================")
-        
         if has_subtabs:
             # Create admin tab with subtabs
-            print("[DEBUG] ✅ Creating Admin tab with NEW SUBTABS structure...")
             admin_frame = ttk.Frame(self.notebook, style='Tool.TFrame')
             self.notebook.add(admin_frame, text="👥 Admin")
             
@@ -4431,7 +4301,7 @@ To fix this:
             # Add User Management subtab
             if USER_MANAGEMENT_AVAILABLE:
                 try:
-                    print("[DEBUG] Creating User Management subtab...")
+                    pass
                     user_mgmt_frame = ttk.Frame(self.admin_notebook, style='Tool.TFrame')
                     self.admin_notebook.add(user_mgmt_frame, text="👥 User Management")
                     
@@ -4442,11 +4312,9 @@ To fix this:
                     
                     # Create the user management panel
                     self.user_management_panel = UserManagementPanel(container_frame, self.auth, self.get_colors)
-                    print("[DEBUG] ✅ User Management subtab created successfully")
                     
                 except Exception as e:
                     self.log_error("Error creating user management panel", e)
-                    print(f"[DEBUG] ❌ Error creating User Management subtab: {e}")
                     error_label = tk.Label(
                         container_frame,
                         text=f"Error loading user management:\n{str(e)}",
@@ -4459,7 +4327,7 @@ To fix this:
             # Add Audit Logs subtab
             if USER_AUDIT_AVAILABLE:
                 try:
-                    print("[DEBUG] Creating Audit Logs subtab...")
+                    pass
                     audit_frame = ttk.Frame(self.admin_notebook, style='Tool.TFrame')
                     self.admin_notebook.add(audit_frame, text="📋 Audit Logs")
                     
@@ -4470,11 +4338,9 @@ To fix this:
                     
                     # Create the audit logs panel
                     self.audit_logs_panel = AuditLogsPanel(container_frame, self.auth, self.get_colors)
-                    print("[DEBUG] ✅ Audit Logs subtab created successfully")
                     
                 except Exception as e:
                     self.log_error("Error creating audit logs panel", e)
-                    print(f"[DEBUG] ❌ Error creating Audit Logs subtab: {e}")
                     error_label = tk.Label(
                         container_frame,
                         text=f"Error loading audit logs:\n{str(e)}",
@@ -4491,12 +4357,8 @@ To fix this:
             self.tool_tab_colors['User Management'] = '#d4a017'
             self.tool_tab_colors['Audit Logs'] = '#d4a017'
             
-            print("[DEBUG] ✅ Admin tab with subtabs completed")
-            
         elif ADMIN_TAB_AVAILABLE:
             # Fallback to old single admin tab if subtab modules not available
-            print("[DEBUG] ⚠️  Creating LEGACY admin tab (single panel)...")
-            print("[DEBUG]     New subtab modules not available, using admin_tab.py")
             admin_frame = ttk.Frame(self.notebook, style='Tool.TFrame')
             self.notebook.add(admin_frame, text="👥 Admin")
             
@@ -4844,7 +4706,6 @@ To fix this:
         """Show the welcome popup with version info and changelog"""
         pass  # Simplified for this example
 
-
 def run_app(auth=None):
     """Run the main application after authentication"""
     try:
@@ -4867,7 +4728,7 @@ def run_app(auth=None):
         root.mainloop()
         
     except Exception as e:
-        print(f"Critical error starting HelloToolbelt: {e}")
+        pass
         import traceback
         traceback.print_exc()
         
@@ -4882,7 +4743,7 @@ def run_app(auth=None):
                 root.deiconify()
                 root.mainloop()
         except Exception as e2:
-            print(f"Emergency show failed: {e2}")
+            pass
             try:
                 simple_root = tk.Tk()
                 simple_root.title("HelloToolbelt - Error")
@@ -4893,8 +4754,7 @@ def run_app(auth=None):
                         font=('Arial', 12)).pack(expand=True)
                 simple_root.mainloop()
             except:
-                print("Complete failure - cannot display any window")
-
+                pass
 
 def main():
     """Main entry point with authentication"""
@@ -4908,17 +4768,12 @@ def main():
         # Show login window first
         def on_login_success(auth):
             """Called after successful login"""
-            print(f"Logged in as: {auth.username}")
-            print(f"Is admin: {auth.is_admin}")
-            print(f"Permissions: {auth.permissions}")
             run_app(auth)
         
         require_auth(on_login_success)
     else:
         # No auth module available, run without authentication
-        print("Running without authentication (auth_integration.py not found)")
         run_app(None)
-
 
 if __name__ == "__main__":
     main()
