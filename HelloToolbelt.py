@@ -27,7 +27,7 @@ except ImportError:
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "1.1.0"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "2.1.2"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -284,6 +284,9 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
         try:
             # For macOS, we'll extract and replace the app bundle
             if download_path.endswith('.zip'):
+                # Clear quarantine from downloaded zip first
+                subprocess.run(['xattr', '-dr', 'com.apple.quarantine', download_path], capture_output=True)
+                
                 # Extract the zip
                 extract_dir = tempfile.mkdtemp(prefix='hellotoolbelt_extract_')
                 shutil.unpack_archive(download_path, extract_dir)
@@ -307,6 +310,7 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
 sleep 3
 rm -rf "{current_app}"
 cp -R "{new_app_path}" "{os.path.dirname(current_app)}/"
+xattr -dr com.apple.quarantine "{current_app}"
 rm -rf "{extract_dir}"
 rm -rf "{os.path.dirname(download_path)}"
 open "{current_app}"
@@ -872,7 +876,7 @@ class SplashScreen:
         # Version
         self.canvas.create_text(
             200, 175,
-            text="Version 1.1.0",
+            text="Version 2.1.2",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
