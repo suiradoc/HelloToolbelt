@@ -27,7 +27,7 @@ except ImportError:
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "1.2.0"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "1.3.0"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -82,7 +82,6 @@ class AutoUpdater:
         self.release_notes = None
     
     def _parse_version(self, version_str):
-        """Parse version string to tuple for comparison (e.g., '2.1.2' -> (2, 1, 2))"""
         try:
             # Remove 'v' prefix if present
             clean_version = version_str.strip().lstrip('v')
@@ -772,22 +771,25 @@ class SplashScreen:
     def set_icon(self):
         """Set the application icon if available"""
         try:
+            # On macOS, skip setting window icon for splash - it's handled by the app bundle
+            # This avoids broken icon placeholder issues
+            if sys.platform == 'darwin':
+                return
+            
+            # On Windows/Linux, try to set the icon
             icon_paths = [
-                'icon.icns', 'icon.ico',
-                os.path.join(os.path.dirname(__file__), 'icon.icns'),
+                'icon.ico',
                 os.path.join(os.path.dirname(__file__), 'icon.ico'),
-                os.path.join(os.getcwd(), 'icon.icns'),
                 os.path.join(os.getcwd(), 'icon.ico')
             ]
             
             for icon_path in icon_paths:
                 if os.path.exists(icon_path):
-                    if icon_path.endswith('.icns') and sys.platform == 'darwin':
+                    try:
                         self.splash.iconbitmap(icon_path)
                         break
-                    elif icon_path.endswith('.ico'):
-                        self.splash.iconbitmap(icon_path)
-                        break
+                    except Exception:
+                        pass
         except Exception as e:
             pass
     
@@ -881,7 +883,7 @@ class SplashScreen:
         # Version
         self.canvas.create_text(
             200, 175,
-            text="Version 1.2.0",
+            text="Version 1.3.0",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
@@ -1672,31 +1674,33 @@ class MultiToolLauncher:
         try:
             # First, check if running on macOS
             if sys.platform == 'darwin':
-                # On macOS, try .icns first
-                icon_paths = [
-                    'icon.icns',
-                    os.path.join(os.path.dirname(__file__), 'icon.icns'),
-                    os.path.join(os.getcwd(), 'icon.icns')
-                ]
-                
-                for icon_path in icon_paths:
-                    if os.path.exists(icon_path):
-                        try:
-                            # On macOS, iconbitmap works with .icns
-                            self.root.iconbitmap(icon_path)
-                            self.log_info(f"Successfully set icon: {icon_path}")
-                            return
-                        except Exception as e:
-                            self.log_error(f"Failed to set .icns icon: {icon_path}", e)
-                            # Try alternative method with tk.call
+                # On macOS, the app icon is typically handled by the .app bundle
+                # Only try to set icon if we're running as a frozen app with the icon bundled
+                if getattr(sys, 'frozen', False):
+                    # Running as frozen app - try to find bundled icon
+                    base_path = os.path.dirname(sys.executable)
+                    macos_resources = os.path.join(base_path, '..', 'Resources')
+                    
+                    icon_paths = [
+                        os.path.join(macos_resources, 'icon.icns'),
+                        os.path.join(base_path, 'icon.icns'),
+                    ]
+                    
+                    for icon_path in icon_paths:
+                        if os.path.exists(icon_path):
                             try:
-                                # This is a more reliable method on macOS
-                                self.root.tk.call('wm', 'iconphoto', self.root._w, 
-                                                tk.PhotoImage(file=self._convert_icns_to_png(icon_path)))
-                                self.log_info(f"Set icon using iconphoto: {icon_path}")
+                                self.root.iconbitmap(icon_path)
+                                self.log_info(f"Successfully set icon: {icon_path}")
                                 return
-                            except Exception as e2:
-                                self.log_error(f"iconphoto also failed", e2)
+                            except Exception as e:
+                                self.log_error(f"Failed to set .icns icon: {icon_path}", e)
+                                # Don't try alternative methods - just skip to avoid broken icon
+                                break
+                
+                # On macOS, if no icon found or not frozen, just skip - don't set anything
+                # This avoids the broken image placeholder in the title bar
+                self.log_info("macOS: Skipping window icon (handled by app bundle or not available)")
+                return
             else:
                 # On Windows/Linux, use .ico
                 icon_paths = [
@@ -4113,11 +4117,21 @@ class MultiToolLauncher:
                 parent=self.root
             )
             
-            # Close the application (user needs to log in again)
+            # Save settings and mark as destroyed
             self._destroyed = True
             self.save_settings()
+            
+            # Close the main application window
             self.root.quit()
             self.root.destroy()
+            
+            # Return to login screen if auth is available
+            if AUTH_AVAILABLE:
+                def on_login_success(auth, login_window=None):
+                    """Called after successful login"""
+                    run_app(auth, login_window)
+                
+                require_auth(on_login_success)
             
         except Exception as e:
             self.log_error("Error during inactivity logout", e)
@@ -4132,7 +4146,7 @@ class MultiToolLauncher:
             self._perform_logout()
     
     def _perform_logout(self):
-        """Perform logout and close application"""
+        """Perform logout and return to login screen"""
         try:
             self.log_info("User initiated logout")
             
@@ -4144,11 +4158,24 @@ class MultiToolLauncher:
                 except:
                     pass
             
-            # Close the application
+            # Save settings and mark as destroyed
             self._destroyed = True
             self.save_settings()
+            
+            # Close the main application window
             self.root.quit()
             self.root.destroy()
+            
+            # Return to login screen if auth is available
+            if AUTH_AVAILABLE:
+                def on_login_success(auth, login_window=None):
+                    """Called after successful login"""
+                    run_app(auth, login_window)
+                
+                require_auth(on_login_success)
+            else:
+                # No auth available, just exit
+                pass
             
         except Exception as e:
             self.log_error("Error during logout", e)
