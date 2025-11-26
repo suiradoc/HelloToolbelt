@@ -27,7 +27,7 @@ except ImportError:
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "1.0.1"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "1.4.2"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -334,6 +334,7 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                 print(f"[UPDATE] Destination: {dest_dir}")
                 
                 # Create shell script to replace the app
+                # Using cp -Rp to preserve permissions, and explicitly chmod the executable
                 script = f'''#!/bin/bash
 # Wait for the app to quit
 sleep 3
@@ -341,21 +342,25 @@ sleep 3
 # Remove old app
 rm -rf "{current_app}"
 
-# Copy new app
-cp -R "{new_app_path}" "{dest_dir}/"
+# Copy new app (preserve permissions)
+cp -Rp "{new_app_path}" "{dest_dir}/"
 
 # Get the name of the new app
 NEW_APP_NAME=$(basename "{new_app_path}")
+NEW_APP_PATH="{dest_dir}/$NEW_APP_NAME"
+
+# Ensure executable has correct permissions
+chmod +x "$NEW_APP_PATH/Contents/MacOS/"*
 
 # Clear quarantine attribute
-xattr -dr com.apple.quarantine "{dest_dir}/$NEW_APP_NAME"
+xattr -dr com.apple.quarantine "$NEW_APP_PATH"
 
 # Clean up temp directories
 rm -rf "{extract_dir}"
 rm -rf "{os.path.dirname(download_path)}"
 
 # Launch the new app
-open "{dest_dir}/$NEW_APP_NAME"
+open "$NEW_APP_PATH"
 
 # Delete this script
 rm -- "$0"
@@ -402,78 +407,111 @@ def check_for_updates_on_startup():
         
         # Check for updates silently
         if updater.check_for_updates(silent=True):
-            # Create a temporary root window for the dialog
+            # Update available - force update without asking
+            # Create a temporary root window for the progress dialog
             temp_root = tk.Tk()
             temp_root.withdraw()  # Hide the temporary window
             
-            # Ask user if they want to update
-            if updater.show_update_dialog(temp_root):
-                # Show progress dialog
-                progress_window = tk.Toplevel(temp_root)
-                progress_window.title("Downloading Update")
-                progress_window.geometry("400x150")
-                progress_window.resizable(False, False)
-                progress_window.transient(temp_root)
+            # Show progress dialog
+            progress_window = tk.Toplevel(temp_root)
+            progress_window.title("Updating HelloToolbelt")
+            progress_window.geometry("400x200")
+            progress_window.resizable(False, False)
+            progress_window.configure(bg="#2b2b2b")
+            
+            # Make it stay on top
+            progress_window.attributes('-topmost', True)
+            
+            # Center the progress window
+            progress_window.update_idletasks()
+            x = (progress_window.winfo_screenwidth() // 2) - 200
+            y = (progress_window.winfo_screenheight() // 2) - 100
+            progress_window.geometry(f"+{x}+{y}")
+            
+            # Prevent closing
+            progress_window.protocol("WM_DELETE_WINDOW", lambda: None)
+            
+            # Progress UI
+            title_label = tk.Label(
+                progress_window, 
+                text=f"New version {updater.latest_version} available!",
+                font=('Segoe UI', 12, 'bold'),
+                bg="#2b2b2b",
+                fg="#ffffff"
+            )
+            title_label.pack(pady=(25, 10))
+            
+            status_label = tk.Label(
+                progress_window, 
+                text="Downloading update...",
+                font=('Segoe UI', 11),
+                bg="#2b2b2b",
+                fg="#aaaaaa"
+            )
+            status_label.pack(pady=(5, 15))
+            
+            progress_var = tk.DoubleVar()
+            progress_bar = ttk.Progressbar(
+                progress_window, 
+                variable=progress_var, 
+                maximum=100,
+                length=350
+            )
+            progress_bar.pack(pady=10)
+            
+            progress_label = tk.Label(
+                progress_window, 
+                text="0%",
+                font=('Segoe UI', 10),
+                bg="#2b2b2b",
+                fg="#888888"
+            )
+            progress_label.pack()
+            
+            def update_progress(percent):
+                progress_var.set(percent)
+                progress_label.config(text=f"{percent}%")
+                progress_window.update()
+            
+            # Download the update
+            download_path = updater.download_update(progress_callback=update_progress)
+            
+            if download_path:
+                # Show installing message
+                status_label.config(text="Installing update...")
+                progress_label.config(text="Please wait...")
+                progress_var.set(100)
+                progress_window.update()
                 
-                # Center the progress window
-                progress_window.update_idletasks()
-                x = (progress_window.winfo_screenwidth() // 2) - 200
-                y = (progress_window.winfo_screenheight() // 2) - 75
-                progress_window.geometry(f"+{x}+{y}")
-                
-                # Progress UI
-                tk.Label(
-                    progress_window, 
-                    text="Downloading HelloToolbelt update...",
-                    font=('Segoe UI', 12)
-                ).pack(pady=20)
-                
-                progress_var = tk.DoubleVar()
-                progress_bar = ttk.Progressbar(
-                    progress_window, 
-                    variable=progress_var, 
-                    maximum=100,
-                    length=350
-                )
-                progress_bar.pack(pady=10)
-                
-                progress_label = tk.Label(
-                    progress_window, 
-                    text="0%",
-                    font=('Segoe UI', 10)
-                )
-                progress_label.pack()
-                
-                def update_progress(percent):
-                    progress_var.set(percent)
-                    progress_label.config(text=f"{percent}%")
+                # Install the update
+                if updater.install_update(download_path):
+                    # Show restart message
+                    status_label.config(text="✓ Update installed successfully!")
+                    progress_label.config(text="Restarting HelloToolbelt...")
                     progress_window.update()
-                
-                # Download the update
-                download_path = updater.download_update(progress_callback=update_progress)
-                
-                if download_path:
-                    progress_window.destroy()
                     
-                    # Install the update
-                    if updater.install_update(download_path):
-                        temp_root.destroy()
-                        sys.exit(0)  # Exit so the update can proceed
-                        return True
-                    else:
-                        messagebox.showinfo(
-                            "Update Downloaded",
-                            f"The update has been downloaded to:\n{download_path}\n\n"
-                            "Please install it manually.",
-                            parent=temp_root
-                        )
+                    # Brief pause so user can see the message
+                    time.sleep(1.5)
+                    
+                    progress_window.destroy()
+                    temp_root.destroy()
+                    sys.exit(0)  # Exit so the update can proceed
+                    return True
                 else:
                     progress_window.destroy()
-                    messagebox.showerror(
-                        "Update Failed",
-                        "Failed to download the update. Please try again later.",
+                    messagebox.showinfo(
+                        "Update Downloaded",
+                        f"The update has been downloaded to:\n{download_path}\n\n"
+                        "Please install it manually.",
                         parent=temp_root
                     )
+            else:
+                progress_window.destroy()
+                messagebox.showerror(
+                    "Update Failed",
+                    "Failed to download the update. Please try again later.",
+                    parent=temp_root
+                )
             
             temp_root.destroy()
         
@@ -928,7 +966,7 @@ class SplashScreen:
         # Version
         self.canvas.create_text(
             200, 175,
-            text="Version 1.0.1",
+            text="Version 1.1.3",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
