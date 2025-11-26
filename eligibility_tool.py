@@ -820,10 +820,9 @@ class EligibilitySearchTool:
         # Check if this is running in HelloToolbelt (MockRoot) or standalone
         self.is_in_toolbelt = hasattr(root, '_title') and hasattr(root, 'pack')
         
-        # Check CURRENT tier (not just if Tier 3 was ever unlocked)
-        # This ensures download button only shows when ACTIVELY using Tier 3
-        current_tier = getattr(root, 'current_tier', 'Tier 3')  # Default to Tier 3 for standalone
-        self.is_tier3 = (current_tier == 'Tier 3')  # True only if current tier is Tier 3
+        # Check for S3 download permission from user permissions
+        # In standalone mode, default to True; in HelloToolbelt, check the permission
+        self.can_s3_download = getattr(root, 'can_s3_download', True)  # Default to True for standalone
         
         if not self.is_in_toolbelt:
             # Only configure background if running standalone
@@ -1503,8 +1502,8 @@ class EligibilitySearchTool:
         s3_button_frame = tk.Frame(self.s3_content_frame, bg=self.frame_bg)
         s3_button_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
         
-        # Download button (save to disk) - ONLY FOR TIER 3
-        if self.is_tier3:
+        # Download button (save to disk) - Only shown if user has S3 download permission
+        if self.can_s3_download:
             download_button = tk.Button(s3_button_frame, text="💾 Download File", 
                                        command=self.download_selected_s3_file,
                                        bg='#6c757d', fg='black',

@@ -720,6 +720,10 @@ class LoadingScreen:
             pass
         except Exception as e:
             pass
+    
+    def update_status(self, text, percentage=None):
+        """Update the loading status - no-op to avoid event loop issues"""
+        pass
 
 class SplashScreen:
     """Splash screen with heartbeat animation"""
@@ -1320,10 +1324,11 @@ class PasswordDialog:
             return False
 
 class MultiToolLauncher:
-    def __init__(self, root, splash=None, auth=None, loading_callback=None):
+    def __init__(self, root, splash=None, auth=None, login_window=None, loading_callback=None):
         self.splash = splash
         self.root = root
         self.auth = auth  # Store auth client for permission checks and logging
+        self.login_window = login_window  # Login window for loading animation
         self.loading_callback = loading_callback  # Callback for loading progress bar
         
         # Keep window hidden (already withdrawn in main)
@@ -1360,6 +1365,18 @@ class MultiToolLauncher:
         # Initialize tier setting - always Tier 3 now (auth controls access)
         self.tier3_unlocked = True
         self.current_tier = 'Tier 3'
+        
+        # Initialize S3 download permission from auth (defaults to False if not set)
+        if self.auth and hasattr(self.auth, 'can_s3_download'):
+            self.can_s3_download = self.auth.can_s3_download
+        elif self.auth and hasattr(self.auth, 'user_data'):
+            self.can_s3_download = self.auth.user_data.get('can_s3_download', False)
+        else:
+            self.can_s3_download = True  # Default to True when no auth (standalone mode)
+        
+        # Inactivity timeout settings (only when auth is enabled)
+        self.inactivity_timeout_minutes = 15  # Logout after 15 minutes of inactivity
+        self.last_activity_time = time.time()
         
         # Initialize shared credentials system
         self.keyring_available = KEYRING_AVAILABLE
@@ -1538,6 +1555,13 @@ class MultiToolLauncher:
             except Exception as e:
                 pass
         
+        # Destroy login window loading screen if it exists
+        if self.login_window:
+            try:
+                self.login_window.destroy_loading()
+            except Exception as e:
+                pass
+        
         # Show main window directly
         try:
             self.root.title("Hello Toolbelt")
@@ -1558,11 +1582,23 @@ class MultiToolLauncher:
             self.root.deiconify()
             self.root.lift()
             self.root.focus_force()
+            
+            # Setup inactivity tracking (only when auth is enabled)
+            if self.auth:
+                self._setup_activity_tracking()
+                self._start_inactivity_check()
         except Exception as e:
             pass
         
     def _update_loading(self, value, status_text):
         """Update either splash screen or loading callback with progress"""
+        # Keep login window animation running
+        if self.login_window:
+            try:
+                self.login_window.keep_alive()
+            except:
+                pass
+        
         if self.loading_callback:
             try:
                 self.loading_callback(value, status_text)
@@ -1571,6 +1607,14 @@ class MultiToolLauncher:
         elif self.splash:
             try:
                 self.splash.update_status(status_text, value)
+            except:
+                pass
+    
+    def _keep_login_alive(self):
+        """Keep login window animation running during heavy operations"""
+        if self.login_window:
+            try:
+                self.login_window.keep_alive()
             except:
                 pass
 
@@ -2639,7 +2683,7 @@ class MultiToolLauncher:
         
         # Create regular tabs for other tools
         for tool_config in other_tools:
-            pass
+            self._keep_login_alive()
             # Create tab frame with styling
             tab_frame = ttk.Frame(self.notebook, style='Tool.TFrame')
             
@@ -3232,6 +3276,7 @@ class MultiToolLauncher:
             num_tabs = self.notebook.index("end")
             
             for i in range(num_tabs):
+                self._keep_login_alive()
                 # Mark as loaded
                 self.tab_loaded[i] = True
                 
@@ -3392,18 +3437,159 @@ class MultiToolLauncher:
                         bg=options_dark_blue)
         title.pack(side=tk.LEFT, anchor='w')
         
-        # ============ THEME SECTION ============
-        # Theme Settings section (full width now that tier is removed)
+        # ============ TWO-COLUMN LAYOUT FOR SESSION/PASSWORD AND THEME ============
+        top_row_frame = tk.Frame(content_frame, bg=colors['bg'])
+        top_row_frame.pack(fill=tk.X, pady=(0, 20))
+        
+        # Left column - Session and Change Password (stacked)
+        left_column = tk.Frame(top_row_frame, bg=colors['bg'])
+        left_column.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 10))
+        
+        # ============ LOGOUT SECTION (only if auth is available) ============
+        if self.auth:
+            logout_section = tk.Frame(left_column, bg=colors['frame_bg'], relief='solid', bd=1)
+            logout_section.pack(fill=tk.X, pady=(0, 10))
+            
+            logout_content = tk.Frame(logout_section, bg=colors['frame_bg'])
+            logout_content.pack(fill=tk.X, padx=15, pady=12)
+            
+            # Left side - user info
+            logout_left = tk.Frame(logout_content, bg=colors['frame_bg'])
+            logout_left.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            logout_label = tk.Label(logout_left, text="🚪 Session", 
+                                   font=('Segoe UI', 12, 'bold'), bg=colors['frame_bg'], fg=colors['fg'])
+            logout_label.pack(side=tk.LEFT, anchor='w')
+            
+            user_info = tk.Label(logout_left, text=f"Logged in as: {self.auth.username}", 
+                                font=('Segoe UI', 9), bg=colors['frame_bg'], fg=colors['text_secondary'])
+            user_info.pack(side=tk.LEFT, padx=(10, 0))
+            
+            # Right side - logout button
+            logout_btn = tk.Button(logout_content, text="Logout", 
+                                  font=('Segoe UI', 9, 'bold'),
+                                  bg='#e74c3c', fg='black',
+                                  activebackground='#c0392b',
+                                  activeforeground='black',
+                                  relief='flat', cursor='hand2',
+                                  command=self._logout_clicked,
+                                  padx=15, pady=4)
+            logout_btn.pack(side=tk.RIGHT)
+            
+            # Add hover effect for logout button
+            def on_logout_enter(e):
+                logout_btn.configure(bg='#c0392b')
+            def on_logout_leave(e):
+                logout_btn.configure(bg='#e74c3c')
+            
+            logout_btn.bind("<Enter>", on_logout_enter)
+            logout_btn.bind("<Leave>", on_logout_leave)
+            
+            # ============ CHANGE PASSWORD SECTION (in left column) ============
+            password_section = tk.Frame(left_column, bg=colors['frame_bg'], relief='solid', bd=1)
+            password_section.pack(fill=tk.X)
+            
+            # Track if password section is expanded
+            self.password_section_expanded = tk.BooleanVar(value=False)
+            
+            # Clickable header
+            password_header = tk.Frame(password_section, bg=colors['header_bg'], cursor='hand2')
+            password_header.pack(fill=tk.X)
+            
+            password_header_content = tk.Frame(password_header, bg=colors['header_bg'])
+            password_header_content.pack(fill=tk.X, pady=12, padx=15)
+            
+            # Expand/collapse icon
+            self.password_expand_icon = tk.Label(password_header_content, text="▶", 
+                                           font=('Segoe UI', 10), bg=colors['header_bg'], fg=colors['fg'])
+            self.password_expand_icon.pack(side=tk.LEFT, padx=(0, 8))
+            
+            password_label = tk.Label(password_header_content, text="🔐 Change Password", 
+                               font=('Segoe UI', 12, 'bold'), bg=colors['header_bg'], fg=colors['fg'])
+            password_label.pack(side=tk.LEFT, anchor='w')
+            
+            # Password content (initially hidden)
+            self.password_content_frame = tk.Frame(password_section, bg=colors['frame_bg'])
+            
+            password_info = tk.Label(self.password_content_frame, 
+                                 text="Requirements: 8+ characters, one number, one special character.",
+                                 font=('Segoe UI', 9), bg=colors['frame_bg'], fg=colors['text_secondary'], 
+                                 wraplength=350, justify=tk.LEFT)
+            password_info.pack(pady=(10, 10), padx=15, anchor='w')
+            
+            # Password form
+            password_form = tk.Frame(self.password_content_frame, bg=colors['frame_bg'])
+            password_form.pack(fill=tk.X, pady=(0, 10), padx=15)
+            
+            # Current password
+            tk.Label(password_form, text="Current Password:", font=('Segoe UI', 9, 'bold'),
+                    bg=colors['frame_bg'], fg=colors['fg']).grid(row=0, column=0, sticky="w", pady=(0, 8), padx=(0, 8))
+            self.current_password_var = tk.StringVar()
+            current_pw_entry = tk.Entry(password_form, textvariable=self.current_password_var, 
+                                       font=('Segoe UI', 9), width=25, show="●")
+            current_pw_entry.grid(row=0, column=1, sticky="w", pady=(0, 8))
+            
+            # New password
+            tk.Label(password_form, text="New Password:", font=('Segoe UI', 9, 'bold'),
+                    bg=colors['frame_bg'], fg=colors['fg']).grid(row=1, column=0, sticky="w", pady=(0, 8), padx=(0, 8))
+            self.new_password_var = tk.StringVar()
+            new_pw_entry = tk.Entry(password_form, textvariable=self.new_password_var, 
+                                   font=('Segoe UI', 9), width=25, show="●")
+            new_pw_entry.grid(row=1, column=1, sticky="w", pady=(0, 8))
+            
+            # Confirm new password
+            tk.Label(password_form, text="Confirm Password:", font=('Segoe UI', 9, 'bold'),
+                    bg=colors['frame_bg'], fg=colors['fg']).grid(row=2, column=0, sticky="w", pady=(0, 8), padx=(0, 8))
+            self.confirm_password_var = tk.StringVar()
+            confirm_pw_entry = tk.Entry(password_form, textvariable=self.confirm_password_var, 
+                                       font=('Segoe UI', 9), width=25, show="●")
+            confirm_pw_entry.grid(row=2, column=1, sticky="w", pady=(0, 8))
+            
+            # Status message
+            self.password_status_var = tk.StringVar()
+            self.password_status_label = tk.Label(password_form, textvariable=self.password_status_var,
+                                                  font=('Segoe UI', 9), bg=colors['frame_bg'], fg=colors['fg'])
+            self.password_status_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(5, 8))
+            
+            # Change password button
+            change_pw_btn = tk.Button(password_form, text="Change Password", 
+                                     font=('Segoe UI', 9, 'bold'),
+                                     bg=colors['primary'], fg='#000000',
+                                     command=self._change_password)
+            change_pw_btn.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 10))
+            
+            # Toggle function for password section
+            def toggle_password_section(event=None):
+                if self.password_section_expanded.get():
+                    self.password_content_frame.pack_forget()
+                    self.password_expand_icon.config(text="▶")
+                    self.password_section_expanded.set(False)
+                else:
+                    self.password_content_frame.pack(fill=tk.X)
+                    self.password_expand_icon.config(text="▼")
+                    self.password_section_expanded.set(True)
+            
+            # Bind click to toggle
+            password_header.bind("<Button-1>", toggle_password_section)
+            password_header_content.bind("<Button-1>", toggle_password_section)
+            password_label.bind("<Button-1>", toggle_password_section)
+            self.password_expand_icon.bind("<Button-1>", toggle_password_section)
+        
+        # Right column - Theme Settings
+        right_column = tk.Frame(top_row_frame, bg=colors['bg'])
+        right_column.pack(side=tk.RIGHT, fill=tk.X, expand=True, padx=(10, 0))
+        
+        # ============ THEME SECTION (in right column) ============
         options_dark_blue = '#1e3a5f'  # Dark blue to match Options tab
-        theme_section = tk.Frame(content_frame, bg=options_dark_blue, relief='flat', bd=0)
-        theme_section.pack(fill=tk.X, pady=(0, 30))
+        theme_section = tk.Frame(right_column, bg=options_dark_blue, relief='flat', bd=0)
+        theme_section.pack(fill=tk.X)
         
         theme_content = tk.Frame(theme_section, bg=options_dark_blue)
         theme_content.pack(fill=tk.X, padx=20, pady=20)
         
         theme_label = tk.Label(theme_content,
-                            text="Theme Settings",
-                            font=('Segoe UI', 14, 'bold'),
+                            text="🎨 Theme Settings",
+                            font=('Segoe UI', 12, 'bold'),
                             fg='white',
                             bg=options_dark_blue)
         theme_label.pack(anchor='w', pady=(0, 10))
@@ -3411,10 +3597,11 @@ class MultiToolLauncher:
         # Theme description
         theme_desc = tk.Label(theme_content,
                             text="Toggle between light and dark themes. Your preference will be remembered.",
-                            font=('Segoe UI', 10),
+                            font=('Segoe UI', 9),
                             fg='white',
                             bg=options_dark_blue,
-                            wraplength=500)
+                            wraplength=280,
+                            justify=tk.LEFT)
         theme_desc.pack(anchor='w', pady=(0, 15))
         
         # Container for slider and labels
@@ -3440,102 +3627,6 @@ class MultiToolLauncher:
                             fg='white',
                             bg=options_dark_blue)
         dark_label.pack(side=tk.LEFT)
-        
-        # ============ CHANGE PASSWORD SECTION (only if auth is available) ============
-        if self.auth:
-            password_section = tk.Frame(content_frame, bg=colors['frame_bg'], relief='solid', bd=1)
-            password_section.pack(fill=tk.X, pady=(0, 20))
-            
-            # Track if password section is expanded
-            self.password_section_expanded = tk.BooleanVar(value=False)
-            
-            # Clickable header
-            password_header = tk.Frame(password_section, bg=colors['header_bg'], cursor='hand2')
-            password_header.pack(fill=tk.X)
-            
-            password_header_content = tk.Frame(password_header, bg=colors['header_bg'])
-            password_header_content.pack(fill=tk.X, pady=15, padx=20)
-            
-            # Expand/collapse icon
-            self.password_expand_icon = tk.Label(password_header_content, text="▶", 
-                                           font=('Segoe UI', 12), bg=colors['header_bg'], fg=colors['fg'])
-            self.password_expand_icon.pack(side=tk.LEFT, padx=(0, 10))
-            
-            password_label = tk.Label(password_header_content, text="🔐 Change Password", 
-                               font=('Segoe UI', 14, 'bold'), bg=colors['header_bg'], fg=colors['fg'])
-            password_label.pack(side=tk.LEFT, anchor='w')
-            
-            # Show logged in user
-            user_label = tk.Label(password_header_content, text=f"(Logged in as: {self.auth.username})", 
-                               font=('Segoe UI', 10), bg=colors['header_bg'], fg=colors['text_secondary'])
-            user_label.pack(side=tk.RIGHT)
-            
-            # Password content (initially hidden)
-            self.password_content_frame = tk.Frame(password_section, bg=colors['frame_bg'])
-            
-            password_info = tk.Label(self.password_content_frame, 
-                                 text="Change your HelloToolbelt login password. Requirements: 8+ characters, one number, one special character.",
-                                 font=('Segoe UI', 10), bg=colors['frame_bg'], fg=colors['text_secondary'], 
-                                 wraplength=700, justify=tk.LEFT)
-            password_info.pack(pady=(15, 15), padx=20, anchor='w')
-            
-            # Password form
-            password_form = tk.Frame(self.password_content_frame, bg=colors['frame_bg'])
-            password_form.pack(fill=tk.X, pady=(0, 10), padx=20)
-            
-            # Current password
-            tk.Label(password_form, text="Current Password:", font=('Segoe UI', 10, 'bold'),
-                    bg=colors['frame_bg'], fg=colors['fg']).grid(row=0, column=0, sticky="w", pady=(0, 10), padx=(0, 10))
-            self.current_password_var = tk.StringVar()
-            current_pw_entry = tk.Entry(password_form, textvariable=self.current_password_var, 
-                                       font=('Segoe UI', 10), width=30, show="●")
-            current_pw_entry.grid(row=0, column=1, sticky="w", pady=(0, 10))
-            
-            # New password
-            tk.Label(password_form, text="New Password:", font=('Segoe UI', 10, 'bold'),
-                    bg=colors['frame_bg'], fg=colors['fg']).grid(row=1, column=0, sticky="w", pady=(0, 10), padx=(0, 10))
-            self.new_password_var = tk.StringVar()
-            new_pw_entry = tk.Entry(password_form, textvariable=self.new_password_var, 
-                                   font=('Segoe UI', 10), width=30, show="●")
-            new_pw_entry.grid(row=1, column=1, sticky="w", pady=(0, 10))
-            
-            # Confirm new password
-            tk.Label(password_form, text="Confirm New Password:", font=('Segoe UI', 10, 'bold'),
-                    bg=colors['frame_bg'], fg=colors['fg']).grid(row=2, column=0, sticky="w", pady=(0, 10), padx=(0, 10))
-            self.confirm_password_var = tk.StringVar()
-            confirm_pw_entry = tk.Entry(password_form, textvariable=self.confirm_password_var, 
-                                       font=('Segoe UI', 10), width=30, show="●")
-            confirm_pw_entry.grid(row=2, column=1, sticky="w", pady=(0, 10))
-            
-            # Status message
-            self.password_status_var = tk.StringVar()
-            self.password_status_label = tk.Label(password_form, textvariable=self.password_status_var,
-                                                  font=('Segoe UI', 10), bg=colors['frame_bg'], fg=colors['fg'])
-            self.password_status_label.grid(row=3, column=0, columnspan=2, sticky="w", pady=(5, 10))
-            
-            # Change password button
-            change_pw_btn = tk.Button(password_form, text="Change Password", 
-                                     font=('Segoe UI', 10, 'bold'),
-                                     bg=colors['primary'], fg='#000000',
-                                     command=self._change_password)
-            change_pw_btn.grid(row=4, column=0, columnspan=2, sticky="w", pady=(5, 10))
-            
-            # Toggle function for password section
-            def toggle_password_section(event=None):
-                if self.password_section_expanded.get():
-                    self.password_content_frame.pack_forget()
-                    self.password_expand_icon.config(text="▶")
-                    self.password_section_expanded.set(False)
-                else:
-                    self.password_content_frame.pack(fill=tk.X)
-                    self.password_expand_icon.config(text="▼")
-                    self.password_section_expanded.set(True)
-            
-            # Bind click to toggle
-            password_header.bind("<Button-1>", toggle_password_section)
-            password_header_content.bind("<Button-1>", toggle_password_section)
-            password_label.bind("<Button-1>", toggle_password_section)
-            self.password_expand_icon.bind("<Button-1>", toggle_password_section)
         
         # ============ DATABASE CONFIGURATION SECTION (COLLAPSIBLE) ============
         db_section = tk.Frame(content_frame, bg=colors['frame_bg'], relief='solid', bd=1)
@@ -3947,6 +4038,120 @@ class MultiToolLauncher:
             except Exception:
                 pass
 
+    # =========================================================================
+    # Inactivity Auto-Logout System
+    # =========================================================================
+    
+    def _setup_activity_tracking(self):
+        """Setup event bindings to track user activity"""
+        try:
+            # Track mouse and keyboard activity on the root window and all children
+            self.root.bind_all('<Motion>', self._on_activity)
+            self.root.bind_all('<ButtonPress>', self._on_activity)
+            self.root.bind_all('<KeyPress>', self._on_activity)
+            self.root.bind_all('<MouseWheel>', self._on_activity)
+            self.log_info("Activity tracking initialized")
+        except Exception as e:
+            self.log_error("Error setting up activity tracking", e)
+    
+    def _on_activity(self, event=None):
+        """Called when user activity is detected"""
+        self.last_activity_time = time.time()
+    
+    def _start_inactivity_check(self):
+        """Start the periodic inactivity check"""
+        if self._destroyed:
+            return
+        
+        self._check_inactivity()
+    
+    def _check_inactivity(self):
+        """Check for user inactivity and handle timeout"""
+        if self._destroyed or not self.auth:
+            return
+        
+        try:
+            current_time = time.time()
+            inactive_seconds = current_time - self.last_activity_time
+            inactive_minutes = inactive_seconds / 60
+            
+            if inactive_minutes >= self.inactivity_timeout_minutes:
+                # Time's up - auto logout
+                self._perform_inactivity_logout()
+            else:
+                # Schedule next check (every 30 seconds)
+                if not self._destroyed:
+                    self.root.after(30000, self._check_inactivity)
+                
+        except Exception as e:
+            self.log_error("Error checking inactivity", e)
+            # Still try to schedule next check
+            if not self._destroyed:
+                self.root.after(30000, self._check_inactivity)
+    
+    def _perform_inactivity_logout(self):
+        """Perform auto-logout due to inactivity"""
+        if self._destroyed:
+            return
+        
+        try:
+            self.log_info("Auto-logout due to inactivity")
+            
+            # Log the auto-logout
+            if self.auth:
+                try:
+                    self.auth.log_action("AUTO_LOGOUT_INACTIVITY")
+                    self.auth.logout()
+                except:
+                    pass
+            
+            # Show logout message
+            messagebox.showinfo(
+                "Session Expired",
+                "You have been logged out due to inactivity.\n\nPlease log in again to continue.",
+                parent=self.root
+            )
+            
+            # Close the application (user needs to log in again)
+            self._destroyed = True
+            self.save_settings()
+            self.root.quit()
+            self.root.destroy()
+            
+        except Exception as e:
+            self.log_error("Error during inactivity logout", e)
+
+    # =========================================================================
+    # Logout Functionality
+    # =========================================================================
+    
+    def _logout_clicked(self):
+        """Handle logout button click"""
+        if messagebox.askyesno("Logout", "Are you sure you want to logout?", parent=self.root):
+            self._perform_logout()
+    
+    def _perform_logout(self):
+        """Perform logout and close application"""
+        try:
+            self.log_info("User initiated logout")
+            
+            # Log the logout
+            if self.auth:
+                try:
+                    self.auth.log_action("LOGOUT")
+                    self.auth.logout()
+                except:
+                    pass
+            
+            # Close the application
+            self._destroyed = True
+            self.save_settings()
+            self.root.quit()
+            self.root.destroy()
+            
+        except Exception as e:
+            self.log_error("Error during logout", e)
+
     def center_window(self):
         """Center the main window on screen"""
         try:
@@ -3992,6 +4197,9 @@ class MultiToolLauncher:
     def load_tool_in_tab(self, parent_frame, tool_config):
         """Enhanced tool loading with comprehensive error handling"""
         tool_name = tool_config['name']
+        
+        # Keep login animation running during tool loading
+        self._keep_login_alive()
         
         # Prevent concurrent loading of the same tool
         if tool_name in self._loading_tools:
@@ -4063,6 +4271,8 @@ class MultiToolLauncher:
                     # Pass access tier information to tools
                     self.current_tier = hellotoolbelt_instance.current_tier
                     self.tier3_unlocked = hellotoolbelt_instance.tier3_unlocked
+                    # Pass S3 download permission to tools
+                    self.can_s3_download = hellotoolbelt_instance.can_s3_download
                     # Pass auth for audit logging
                     self.auth = hellotoolbelt_instance.auth
                 
@@ -4710,23 +4920,32 @@ To fix this:
         """Show the welcome popup with version info and changelog"""
         pass  # Simplified for this example
 
-def run_app(auth=None):
+def run_app(auth=None, login_window=None):
     """Run the main application after authentication"""
     try:
+        # Destroy login window BEFORE creating new Tk root to avoid conflicts
+        if login_window:
+            try:
+                login_window.destroy_loading()
+            except:
+                pass
+            login_window = None  # Clear reference
+        
         # Now create main application
         root = tk.Tk()
         root.withdraw()  # Hide before any geometry is set
         
-        # Use LoadingScreen for auth mode, SplashScreen for non-auth mode
-        splash = LoadingScreen() if auth else SplashScreen()
-        
+        # For non-auth mode, use SplashScreen
         if not auth:
+            splash = SplashScreen()
             for i in range(5):
                 splash.splash.update()
                 time.sleep(0.1)
+        else:
+            splash = None
         
-        # Initialize the app (splash will continue animating during initialization)
-        app = MultiToolLauncher(root, splash, auth)
+        # Initialize the app
+        app = MultiToolLauncher(root, splash, auth, None)
         
         # App will handle closing splash and showing main window
         root.mainloop()
@@ -4735,6 +4954,12 @@ def run_app(auth=None):
         pass
         import traceback
         traceback.print_exc()
+        
+        try:
+            if login_window:
+                login_window.destroy_loading()
+        except:
+            pass
         
         try:
             if 'splash' in locals() and splash:
@@ -4770,9 +4995,9 @@ def main():
     
     if AUTH_AVAILABLE:
         # Show login window first
-        def on_login_success(auth):
+        def on_login_success(auth, login_window=None):
             """Called after successful login"""
-            run_app(auth)
+            run_app(auth, login_window)
         
         require_auth(on_login_success)
     else:
