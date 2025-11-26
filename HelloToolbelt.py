@@ -27,7 +27,7 @@ except ImportError:
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "1.3.0"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "1.0.0"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -82,6 +82,7 @@ class AutoUpdater:
         self.release_notes = None
     
     def _parse_version(self, version_str):
+        """Parse version string to tuple for comparison (e.g., '2.1.2' -> (2, 1, 2))"""
         try:
             # Remove 'v' prefix if present
             clean_version = version_str.strip().lstrip('v')
@@ -292,28 +293,71 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                 shutil.unpack_archive(download_path, extract_dir)
                 
                 # Find the .app bundle
+                new_app_path = None
                 for item in os.listdir(extract_dir):
                     if item.endswith('.app'):
                         new_app_path = os.path.join(extract_dir, item)
                         break
-                else:
+                
+                if not new_app_path:
+                    print("[UPDATE] No .app found in zip")
                     return False
                 
                 # Get current app path
                 if getattr(sys, 'frozen', False):
+                    # Running as packaged app
+                    # sys.executable is /path/to/App.app/Contents/MacOS/AppName
                     current_app = os.path.dirname(os.path.dirname(os.path.dirname(sys.executable)))
+                    if not current_app.endswith('.app'):
+                        print(f"[UPDATE] Current app path doesn't end with .app: {current_app}")
+                        return False
                 else:
+                    # Running from script - can't auto-install
+                    print("[UPDATE] Not running as packaged app, cannot auto-install")
+                    # Show the extracted app location for manual installation
+                    messagebox.showinfo(
+                        "Update Downloaded",
+                        f"The update has been extracted to:\n{new_app_path}\n\n"
+                        "Please drag it to your Applications folder to install.\n\n"
+                        "(Auto-install is only available when running the packaged .app)"
+                    )
+                    # Open the folder containing the extracted app
+                    subprocess.Popen(['open', extract_dir])
                     return False
+                
+                # Get the destination directory (where current app lives)
+                dest_dir = os.path.dirname(current_app)
+                app_name = os.path.basename(current_app)
+                
+                print(f"[UPDATE] Current app: {current_app}")
+                print(f"[UPDATE] New app: {new_app_path}")
+                print(f"[UPDATE] Destination: {dest_dir}")
                 
                 # Create shell script to replace the app
                 script = f'''#!/bin/bash
+# Wait for the app to quit
 sleep 3
+
+# Remove old app
 rm -rf "{current_app}"
-cp -R "{new_app_path}" "{os.path.dirname(current_app)}/"
-xattr -dr com.apple.quarantine "{current_app}"
+
+# Copy new app
+cp -R "{new_app_path}" "{dest_dir}/"
+
+# Get the name of the new app
+NEW_APP_NAME=$(basename "{new_app_path}")
+
+# Clear quarantine attribute
+xattr -dr com.apple.quarantine "{dest_dir}/$NEW_APP_NAME"
+
+# Clean up temp directories
 rm -rf "{extract_dir}"
 rm -rf "{os.path.dirname(download_path)}"
-open "{current_app}"
+
+# Launch the new app
+open "{dest_dir}/$NEW_APP_NAME"
+
+# Delete this script
 rm -- "$0"
 '''
                 script_path = os.path.join(tempfile.gettempdir(), 'hellotoolbelt_update.sh')
@@ -321,7 +365,8 @@ rm -- "$0"
                     f.write(script)
                 os.chmod(script_path, 0o755)
                 
-                subprocess.Popen(['bash', script_path])
+                print(f"[UPDATE] Running update script: {script_path}")
+                subprocess.Popen(['bash', script_path], start_new_session=True)
                 return True
                 
             elif download_path.endswith('.dmg'):
@@ -334,7 +379,10 @@ rm -- "$0"
                 )
                 return False  # Don't auto-exit, user needs to do manual installation
                 
-        except Exception:
+        except Exception as e:
+            print(f"[UPDATE] Error during macOS install: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
 def check_for_updates_on_startup():
@@ -771,25 +819,22 @@ class SplashScreen:
     def set_icon(self):
         """Set the application icon if available"""
         try:
-            # On macOS, skip setting window icon for splash - it's handled by the app bundle
-            # This avoids broken icon placeholder issues
-            if sys.platform == 'darwin':
-                return
-            
-            # On Windows/Linux, try to set the icon
             icon_paths = [
-                'icon.ico',
+                'icon.icns', 'icon.ico',
+                os.path.join(os.path.dirname(__file__), 'icon.icns'),
                 os.path.join(os.path.dirname(__file__), 'icon.ico'),
+                os.path.join(os.getcwd(), 'icon.icns'),
                 os.path.join(os.getcwd(), 'icon.ico')
             ]
             
             for icon_path in icon_paths:
                 if os.path.exists(icon_path):
-                    try:
+                    if icon_path.endswith('.icns') and sys.platform == 'darwin':
                         self.splash.iconbitmap(icon_path)
                         break
-                    except Exception:
-                        pass
+                    elif icon_path.endswith('.ico'):
+                        self.splash.iconbitmap(icon_path)
+                        break
         except Exception as e:
             pass
     
@@ -883,7 +928,7 @@ class SplashScreen:
         # Version
         self.canvas.create_text(
             200, 175,
-            text="Version 1.3.0",
+            text="Version 1.0.0",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
@@ -1674,33 +1719,31 @@ class MultiToolLauncher:
         try:
             # First, check if running on macOS
             if sys.platform == 'darwin':
-                # On macOS, the app icon is typically handled by the .app bundle
-                # Only try to set icon if we're running as a frozen app with the icon bundled
-                if getattr(sys, 'frozen', False):
-                    # Running as frozen app - try to find bundled icon
-                    base_path = os.path.dirname(sys.executable)
-                    macos_resources = os.path.join(base_path, '..', 'Resources')
-                    
-                    icon_paths = [
-                        os.path.join(macos_resources, 'icon.icns'),
-                        os.path.join(base_path, 'icon.icns'),
-                    ]
-                    
-                    for icon_path in icon_paths:
-                        if os.path.exists(icon_path):
-                            try:
-                                self.root.iconbitmap(icon_path)
-                                self.log_info(f"Successfully set icon: {icon_path}")
-                                return
-                            except Exception as e:
-                                self.log_error(f"Failed to set .icns icon: {icon_path}", e)
-                                # Don't try alternative methods - just skip to avoid broken icon
-                                break
+                # On macOS, try .icns first
+                icon_paths = [
+                    'icon.icns',
+                    os.path.join(os.path.dirname(__file__), 'icon.icns'),
+                    os.path.join(os.getcwd(), 'icon.icns')
+                ]
                 
-                # On macOS, if no icon found or not frozen, just skip - don't set anything
-                # This avoids the broken image placeholder in the title bar
-                self.log_info("macOS: Skipping window icon (handled by app bundle or not available)")
-                return
+                for icon_path in icon_paths:
+                    if os.path.exists(icon_path):
+                        try:
+                            # On macOS, iconbitmap works with .icns
+                            self.root.iconbitmap(icon_path)
+                            self.log_info(f"Successfully set icon: {icon_path}")
+                            return
+                        except Exception as e:
+                            self.log_error(f"Failed to set .icns icon: {icon_path}", e)
+                            # Try alternative method with tk.call
+                            try:
+                                # This is a more reliable method on macOS
+                                self.root.tk.call('wm', 'iconphoto', self.root._w, 
+                                                tk.PhotoImage(file=self._convert_icns_to_png(icon_path)))
+                                self.log_info(f"Set icon using iconphoto: {icon_path}")
+                                return
+                            except Exception as e2:
+                                self.log_error(f"iconphoto also failed", e2)
             else:
                 # On Windows/Linux, use .ico
                 icon_paths = [
@@ -4117,21 +4160,11 @@ class MultiToolLauncher:
                 parent=self.root
             )
             
-            # Save settings and mark as destroyed
+            # Close the application (user needs to log in again)
             self._destroyed = True
             self.save_settings()
-            
-            # Close the main application window
             self.root.quit()
             self.root.destroy()
-            
-            # Return to login screen if auth is available
-            if AUTH_AVAILABLE:
-                def on_login_success(auth, login_window=None):
-                    """Called after successful login"""
-                    run_app(auth, login_window)
-                
-                require_auth(on_login_success)
             
         except Exception as e:
             self.log_error("Error during inactivity logout", e)
@@ -4146,7 +4179,7 @@ class MultiToolLauncher:
             self._perform_logout()
     
     def _perform_logout(self):
-        """Perform logout and return to login screen"""
+        """Perform logout and close application"""
         try:
             self.log_info("User initiated logout")
             
@@ -4158,24 +4191,11 @@ class MultiToolLauncher:
                 except:
                     pass
             
-            # Save settings and mark as destroyed
+            # Close the application
             self._destroyed = True
             self.save_settings()
-            
-            # Close the main application window
             self.root.quit()
             self.root.destroy()
-            
-            # Return to login screen if auth is available
-            if AUTH_AVAILABLE:
-                def on_login_success(auth, login_window=None):
-                    """Called after successful login"""
-                    run_app(auth, login_window)
-                
-                require_auth(on_login_success)
-            else:
-                # No auth available, just exit
-                pass
             
         except Exception as e:
             self.log_error("Error during logout", e)
