@@ -27,7 +27,7 @@ except ImportError:
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "4.1.3"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "1.1.3"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -876,7 +876,7 @@ class SplashScreen:
         # Version
         self.canvas.create_text(
             200, 175,
-            text="Version 4.1.3",
+            text="Version 1.1.3",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
