@@ -27,7 +27,7 @@ except ImportError:
 # =============================================================================
 # Change this to your GitHub repository (format: "username/repo-name")
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "1.4.2"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "1.4.3"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 # Check for authentication module
@@ -288,9 +288,17 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                 # Clear quarantine from downloaded zip first
                 subprocess.run(['xattr', '-dr', 'com.apple.quarantine', download_path], capture_output=True)
                 
-                # Extract the zip
+                # Extract the zip using unzip command (preserves permissions better than shutil)
                 extract_dir = tempfile.mkdtemp(prefix='hellotoolbelt_extract_')
-                shutil.unpack_archive(download_path, extract_dir)
+                result = subprocess.run(
+                    ['unzip', '-o', download_path, '-d', extract_dir],
+                    capture_output=True
+                )
+                
+                if result.returncode != 0:
+                    print(f"[UPDATE] unzip failed: {result.stderr.decode()}")
+                    # Fallback to shutil
+                    shutil.unpack_archive(download_path, extract_dir)
                 
                 # Find the .app bundle
                 new_app_path = None
@@ -302,6 +310,14 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                 if not new_app_path:
                     print("[UPDATE] No .app found in zip")
                     return False
+                
+                # Ensure the executable has proper permissions after extraction
+                macos_dir = os.path.join(new_app_path, 'Contents', 'MacOS')
+                if os.path.exists(macos_dir):
+                    for f in os.listdir(macos_dir):
+                        filepath = os.path.join(macos_dir, f)
+                        if os.path.isfile(filepath):
+                            os.chmod(filepath, 0o755)
                 
                 # Get current app path
                 if getattr(sys, 'frozen', False):
@@ -334,7 +350,7 @@ rmdir /S /Q "{os.path.dirname(download_path)}" > NUL 2>&1
                 print(f"[UPDATE] Destination: {dest_dir}")
                 
                 # Create shell script to replace the app
-                # Using cp -Rp to preserve permissions, and explicitly chmod the executable
+                # Using ditto for copying (best for macOS app bundles)
                 script = f'''#!/bin/bash
 # Wait for the app to quit
 sleep 3
@@ -342,15 +358,15 @@ sleep 3
 # Remove old app
 rm -rf "{current_app}"
 
-# Copy new app (preserve permissions)
-cp -Rp "{new_app_path}" "{dest_dir}/"
+# Copy new app using ditto (preserves all attributes and permissions)
+ditto "{new_app_path}" "{dest_dir}/{os.path.basename(new_app_path)}"
 
 # Get the name of the new app
 NEW_APP_NAME=$(basename "{new_app_path}")
 NEW_APP_PATH="{dest_dir}/$NEW_APP_NAME"
 
-# Ensure executable has correct permissions
-chmod +x "$NEW_APP_PATH/Contents/MacOS/"*
+# Ensure executable has correct permissions (belt and suspenders)
+chmod -R +x "$NEW_APP_PATH/Contents/MacOS/"
 
 # Clear quarantine attribute
 xattr -dr com.apple.quarantine "$NEW_APP_PATH"
