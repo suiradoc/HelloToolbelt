@@ -61,10 +61,10 @@ class UserManagementAPIClient:
         except Exception as e:
             return False, str(e)
     
-    def create_user(self, username, password, is_admin=False, can_s3_download=False, notes=None):
+    def create_user(self, username, password, is_admin=False, can_s3_download=False, can_s3_upload=False, can_s3_delete=False, can_s3_create_folder=False, can_sqs_send=False, notes=None):
         """Create new user"""
         try:
-            data = {"username": username, "password": password, "is_admin": is_admin, "can_s3_download": can_s3_download}
+            data = {"username": username, "password": password, "is_admin": is_admin, "can_s3_download": can_s3_download, "can_s3_upload": can_s3_upload, "can_s3_delete": can_s3_delete, "can_s3_create_folder": can_s3_create_folder, "can_sqs_send": can_sqs_send}
             if notes:
                 data["notes"] = notes
             response = requests.post(
@@ -167,7 +167,7 @@ class NewUserDialog:
         
         self.window = tk.Toplevel(parent)
         self.window.title("New User")
-        self.window.geometry("400x360")
+        self.window.geometry("400x460")
         self.window.configure(bg=self.bg_color)
         self.window.transient(parent)
         self.window.grab_set()
@@ -223,7 +223,35 @@ class NewUserDialog:
         row = tk.Frame(self.window, bg=self.bg_color)
         row.pack(fill=tk.X, padx=20, pady=5)
         self.s3_download_var = tk.BooleanVar(value=False)
-        tk.Checkbutton(row, text="S3 Download", variable=self.s3_download_var, bg=self.bg_color, fg=self.text_color,
+        tk.Checkbutton(row, text="Allow S3 Downloads", variable=self.s3_download_var, bg=self.bg_color, fg=self.text_color,
+                      selectcolor=self.entry_bg, activebackground=self.bg_color).pack(side=tk.LEFT, padx=(90, 0))
+        
+        # S3 Upload checkbox
+        row = tk.Frame(self.window, bg=self.bg_color)
+        row.pack(fill=tk.X, padx=20, pady=5)
+        self.s3_upload_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(row, text="Allow S3 Uploads", variable=self.s3_upload_var, bg=self.bg_color, fg=self.text_color,
+                      selectcolor=self.entry_bg, activebackground=self.bg_color).pack(side=tk.LEFT, padx=(90, 0))
+        
+        # S3 Delete checkbox
+        row = tk.Frame(self.window, bg=self.bg_color)
+        row.pack(fill=tk.X, padx=20, pady=5)
+        self.s3_delete_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(row, text="Allow S3 File Deletion", variable=self.s3_delete_var, bg=self.bg_color, fg=self.text_color,
+                      selectcolor=self.entry_bg, activebackground=self.bg_color).pack(side=tk.LEFT, padx=(90, 0))
+        
+        # S3 Create Folder checkbox
+        row = tk.Frame(self.window, bg=self.bg_color)
+        row.pack(fill=tk.X, padx=20, pady=5)
+        self.s3_create_folder_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(row, text="Allow S3 Create Folder", variable=self.s3_create_folder_var, bg=self.bg_color, fg=self.text_color,
+                      selectcolor=self.entry_bg, activebackground=self.bg_color).pack(side=tk.LEFT, padx=(90, 0))
+        
+        # SQS Send checkbox
+        row = tk.Frame(self.window, bg=self.bg_color)
+        row.pack(fill=tk.X, padx=20, pady=5)
+        self.sqs_send_var = tk.BooleanVar(value=False)
+        tk.Checkbutton(row, text="Allow SQS Messaging", variable=self.sqs_send_var, bg=self.bg_color, fg=self.text_color,
                       selectcolor=self.entry_bg, activebackground=self.bg_color).pack(side=tk.LEFT, padx=(90, 0))
         
         # Buttons
@@ -262,6 +290,10 @@ class NewUserDialog:
             "password": password,
             "is_admin": self.admin_var.get(),
             "can_s3_download": self.s3_download_var.get(),
+            "can_s3_upload": self.s3_upload_var.get(),
+            "can_s3_delete": self.s3_delete_var.get(),
+            "can_s3_create_folder": self.s3_create_folder_var.get(),
+            "can_sqs_send": self.sqs_send_var.get(),
             "notes": notes if notes else None
         }
         self.window.destroy()
@@ -724,6 +756,54 @@ class UserManagementPanel:
                       font=self.label_font, state=tk.DISABLED if is_main_admin else tk.NORMAL)
         s3_download_cb.pack(side=tk.LEFT, padx=10)
         
+        # S3 Upload Permission
+        row = tk.Frame(self.details_frame, bg=self.frame_bg)
+        row.pack(fill=tk.X, pady=5)
+        tk.Label(row, text="S3 Upload:", fg=self.text_secondary, bg=self.frame_bg, 
+                width=12, anchor="e", font=self.label_font).pack(side=tk.LEFT)
+        
+        self.s3_upload_var = tk.BooleanVar(value=user.get("can_s3_upload", False))
+        s3_upload_cb = tk.Checkbutton(row, text="Allow S3 Uploads", variable=self.s3_upload_var, bg=self.frame_bg, 
+                      fg=self.text_color, selectcolor=self.entry_bg, activebackground=self.frame_bg,
+                      font=self.label_font, state=tk.DISABLED if is_main_admin else tk.NORMAL)
+        s3_upload_cb.pack(side=tk.LEFT, padx=10)
+        
+        # S3 Delete Permission
+        row = tk.Frame(self.details_frame, bg=self.frame_bg)
+        row.pack(fill=tk.X, pady=5)
+        tk.Label(row, text="S3 Delete:", fg=self.text_secondary, bg=self.frame_bg, 
+                width=12, anchor="e", font=self.label_font).pack(side=tk.LEFT)
+        
+        self.s3_delete_var = tk.BooleanVar(value=user.get("can_s3_delete", False))
+        s3_delete_cb = tk.Checkbutton(row, text="Allow S3 File Deletion", variable=self.s3_delete_var, bg=self.frame_bg, 
+                      fg=self.text_color, selectcolor=self.entry_bg, activebackground=self.frame_bg,
+                      font=self.label_font, state=tk.DISABLED if is_main_admin else tk.NORMAL)
+        s3_delete_cb.pack(side=tk.LEFT, padx=10)
+        
+        # S3 Create Folder Permission
+        row = tk.Frame(self.details_frame, bg=self.frame_bg)
+        row.pack(fill=tk.X, pady=5)
+        tk.Label(row, text="S3 Folder:", fg=self.text_secondary, bg=self.frame_bg, 
+                width=12, anchor="e", font=self.label_font).pack(side=tk.LEFT)
+        
+        self.s3_create_folder_var = tk.BooleanVar(value=user.get("can_s3_create_folder", False))
+        s3_create_folder_cb = tk.Checkbutton(row, text="Allow S3 Create Folder", variable=self.s3_create_folder_var, bg=self.frame_bg, 
+                      fg=self.text_color, selectcolor=self.entry_bg, activebackground=self.frame_bg,
+                      font=self.label_font, state=tk.DISABLED if is_main_admin else tk.NORMAL)
+        s3_create_folder_cb.pack(side=tk.LEFT, padx=10)
+        
+        # SQS Send Permission
+        row = tk.Frame(self.details_frame, bg=self.frame_bg)
+        row.pack(fill=tk.X, pady=5)
+        tk.Label(row, text="SQS Send:", fg=self.text_secondary, bg=self.frame_bg, 
+                width=12, anchor="e", font=self.label_font).pack(side=tk.LEFT)
+        
+        self.sqs_send_var = tk.BooleanVar(value=user.get("can_sqs_send", False))
+        sqs_send_cb = tk.Checkbutton(row, text="Allow SQS Messaging", variable=self.sqs_send_var, bg=self.frame_bg, 
+                      fg=self.text_color, selectcolor=self.entry_bg, activebackground=self.frame_bg,
+                      font=self.label_font, state=tk.DISABLED if is_main_admin else tk.NORMAL)
+        sqs_send_cb.pack(side=tk.LEFT, padx=10)
+        
         # Last login
         row = tk.Frame(self.details_frame, bg=self.frame_bg)
         row.pack(fill=tk.X, pady=5)
@@ -803,6 +883,10 @@ class UserManagementPanel:
         is_admin = self.admin_var.get()
         is_active = self.active_var.get()
         can_s3_download = self.s3_download_var.get()
+        can_s3_upload = self.s3_upload_var.get()
+        can_s3_delete = self.s3_delete_var.get()
+        can_s3_create_folder = self.s3_create_folder_var.get()
+        can_sqs_send = self.sqs_send_var.get()
         notes = self.notes_var.get()
         perms = {tab: var.get() for tab, var in self.perm_vars.items()}
         
@@ -813,6 +897,10 @@ class UserManagementPanel:
                 is_admin=is_admin,
                 is_active=is_active,
                 can_s3_download=can_s3_download,
+                can_s3_upload=can_s3_upload,
+                can_s3_delete=can_s3_delete,
+                can_s3_create_folder=can_s3_create_folder,
+                can_sqs_send=can_sqs_send,
                 notes=notes
             )
             
@@ -904,6 +992,9 @@ class UserManagementPanel:
                     dialog.result["password"],
                     dialog.result["is_admin"],
                     dialog.result.get("can_s3_download", False),
+                    dialog.result.get("can_s3_upload", False),
+                    dialog.result.get("can_s3_delete", False),
+                    dialog.result.get("can_sqs_send", False),
                     dialog.result.get("notes")
                 )
                 if success:

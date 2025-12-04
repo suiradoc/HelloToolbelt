@@ -10,63 +10,46 @@ class ScrollableFrame(tk.Frame):
     def __init__(self, parent, bg_color='#ffffff', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
-        # Store parent reference
         self.parent = parent
         
-        # Create container
         container = tk.Frame(self, bg=bg_color)
         container.pack(fill="both", expand=True)
         
-        # Canvas and scrollbars (removed horizontal scrollbar)
         self.canvas = tk.Canvas(container, highlightthickness=0, bg=bg_color)
         self.scrollbar_v = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
         
-        # Scrollable frame
         self.scrollable_frame = tk.Frame(self.canvas, bg=bg_color)
         
-        # Configure canvas (removed horizontal scrolling)
         self.canvas.configure(yscrollcommand=self.scrollbar_v.set)
         self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         
-        # Pack components (removed horizontal scrollbar packing)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar_v.pack(side="right", fill="y")
         
-        # Scrolling state
         self.canvas_has_focus = False
         
-        # Bind events
         self.scrollable_frame.bind("<Configure>", self._on_frame_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         
-        # Setup scrolling based on environment
         self._setup_scrolling()
         
     def _setup_scrolling(self):
-        """Setup scrolling - works for both standalone and HelloToolbelt"""
-        # Check if we're in HelloToolbelt
         self.in_toolbelt = self._detect_hellotoolbelt()
         
-        # Always bind enter/leave for focus tracking
         self.canvas.bind("<Enter>", self._on_enter)
         self.canvas.bind("<Leave>", self._on_leave)
         
-        # Bind mouse wheel events
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         
-        # Linux support
         self.canvas.bind("<Button-4>", self._on_mousewheel_linux)
         self.canvas.bind("<Button-5>", self._on_mousewheel_linux)
         
-        # Also bind to the scrollable frame itself
         self._bind_mousewheel_to_children(self.scrollable_frame)
         
     def _detect_hellotoolbelt(self):
-        """Detect if we're running inside HelloToolbelt"""
         try:
             current_parent = self.parent
             while current_parent:
-                # Look for HelloToolbelt MockRoot characteristics
                 if (hasattr(current_parent, '_title') and 
                     hasattr(current_parent, 'pack') and 
                     hasattr(current_parent, '_current_bg')):
@@ -80,7 +63,6 @@ class ScrollableFrame(tk.Frame):
             return False
         
     def _bind_mousewheel_to_children(self, widget):
-        """Recursively bind mousewheel to all child widgets"""
         try:
             widget.bind("<MouseWheel>", self._on_mousewheel)
             widget.bind("<Button-4>", self._on_mousewheel_linux)
@@ -92,7 +74,6 @@ class ScrollableFrame(tk.Frame):
             pass
     
     def _on_enter(self, event):
-        """Mouse entered canvas"""
         self.canvas_has_focus = True
         try:
             self.canvas.focus_set()
@@ -100,23 +81,18 @@ class ScrollableFrame(tk.Frame):
             pass
         
     def _on_leave(self, event):
-        """Mouse left canvas"""
         self.canvas_has_focus = False
         
     def _on_mousewheel(self, event):
-        """Universal mouse wheel handler"""
-        # In HelloToolbelt mode, only scroll if we have focus
         if self.in_toolbelt and not self.canvas_has_focus:
             return "break"
         
         return self._do_scroll(event)
         
     def _on_mousewheel_linux(self, event):
-        """Linux scroll wheel support"""
         if self.in_toolbelt and not self.canvas_has_focus:
             return "break"
         
-        # Convert Linux button events to scroll
         if event.num == 4:
             delta = -1
         elif event.num == 5:
@@ -127,9 +103,7 @@ class ScrollableFrame(tk.Frame):
         return self._do_scroll_with_delta(delta)
     
     def _do_scroll(self, event):
-        """Perform the actual scrolling"""
         try:
-            # Calculate delta
             if hasattr(event, 'delta'):
                 delta = int(-1 * (event.delta / 120))
             else:
@@ -141,45 +115,32 @@ class ScrollableFrame(tk.Frame):
             return "break"
     
     def _do_scroll_with_delta(self, delta):
-        """Perform scrolling with given delta"""
         try:
-            # Limit scroll speed
             delta = max(-3, min(3, delta))
             
-            # Get current scroll position
             current_top, current_bottom = self.canvas.yview()
             
-            # Get canvas and scrollable frame dimensions
             canvas_height = self.canvas.winfo_height()
             self.canvas.update_idletasks()  # Ensure geometry is up to date
             
-            # Get the bounding box of all items in canvas
             bbox = self.canvas.bbox("all")
             if not bbox:
-                # No content to scroll
                 return "break"
             
-            # Calculate total content height
             content_height = bbox[3] - bbox[1]  # bottom - top
             
-            # If content fits entirely in canvas, don't allow scrolling
             if content_height <= canvas_height:
                 return "break"
             
-            # Calculate scroll boundaries more precisely
-            # current_top and current_bottom are fractions (0.0 to 1.0)
             scroll_top = current_top
             scroll_bottom = current_bottom
             
-            # Prevent scrolling up if already at top
             if delta < 0 and scroll_top <= 0.0:
                 return "break"
                 
-            # Prevent scrolling down if already at bottom
             if delta > 0 and scroll_bottom >= 1.0:
                 return "break"
             
-            # Perform scroll
             self.canvas.yview_scroll(delta, "units")
             return "break"
             
@@ -188,19 +149,16 @@ class ScrollableFrame(tk.Frame):
             return "break"
         
     def check_scroll_needed(self):
-        """Check if scrolling is needed and update scrollbar visibility"""
         try:
             self.canvas.update_idletasks()
             bbox = self.canvas.bbox("all")
             if not bbox:
-                # Hide scrollbar if no content
                 self.scrollbar_v.pack_forget()
                 return False
             
             canvas_height = self.canvas.winfo_height()
             content_height = bbox[3] - bbox[1]
             
-            # Show/hide scrollbars based on need
             if content_height > canvas_height:
                 self.scrollbar_v.pack(side="right", fill="y")
                 return True
@@ -211,42 +169,32 @@ class ScrollableFrame(tk.Frame):
             return False
     
     def _on_frame_configure(self, event):
-        """Update scroll region when frame size changes"""
         try:
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-            # Check if scrollbars are needed after content change
             self.canvas.after_idle(self.check_scroll_needed)
         except Exception:
             pass
         
     def _on_canvas_configure(self, event):
-        """Update canvas window size when canvas is resized"""
         try:
             canvas_width = event.width
-            # Ensure the scrollable frame matches the canvas width to prevent horizontal scrolling
             self.canvas.itemconfig(self.canvas_window, width=canvas_width)
-            # Also update scroll region when canvas is resized
             self.canvas.after_idle(self._update_scroll_region)
-            # Check if scrollbars are needed after resize
             self.canvas.after_idle(self.check_scroll_needed)
         except Exception:
             pass
     
     def _update_scroll_region(self):
-        """Force update the scroll region"""
         try:
             self.canvas.update_idletasks()
             bbox = self.canvas.bbox("all")
             if bbox:
-                # Only set the scroll region for vertical scrolling
                 self.canvas.configure(scrollregion=(0, bbox[1], 0, bbox[3]))
         except Exception:
             pass
     
     def force_scroll_update(self):
-        """Public method to force scroll region update and rebind events"""
         self.canvas.after_idle(self._update_scroll_region)
-        # Rebind mousewheel to any new children
         self.canvas.after_idle(lambda: self._bind_mousewheel_to_children(self.scrollable_frame))
 
 class MultiFileColumnSearchTool:
@@ -254,24 +202,19 @@ class MultiFileColumnSearchTool:
         self.root = root
         self.root.title("Multi-File Column Search Tool")
         
-        # Check if this is running in HelloToolbelt (MockRoot) or standalone
         self.is_in_toolbelt = hasattr(root, '_title') and hasattr(root, 'pack')
         
         if not self.is_in_toolbelt:
-            # Only configure background if running standalone
             self.root.configure(bg='#ffffff')
         
-        # Use system default colors that will adapt to light/dark mode
         self.setup_adaptive_styling()
         
         self.root.minsize(1000, 800)
         
-        # Search variables
         self.search_folder_path = tk.StringVar()
         self.search_column_name = tk.StringVar()
         self.search_delimiter = tk.StringVar(value="auto")
         
-        # Check boxes for file types
         self.csv_enabled = tk.BooleanVar(value=True)
         self.xlsx_enabled = tk.BooleanVar(value=True)
         self.xls_enabled = tk.BooleanVar(value=True)
@@ -282,47 +225,35 @@ class MultiFileColumnSearchTool:
         
         self.build_interface()
         
-        # Center window only if standalone
         if not self.is_in_toolbelt:
             self._center_window()
 
     def setup_adaptive_styling(self):
-        """Setup styling that adapts to system theme (light/dark mode)"""
-        # When running in HelloToolbelt, inherit colors from parent
         if self.is_in_toolbelt:
-            # Get colors from the parent container (HelloToolbelt)
             try:
                 parent_bg = self.root.cget('bg')
                 parent_fg = self.root.cget('fg') 
             except:
-                # Fallback colors
                 parent_bg = '#ffffff'
                 parent_fg = '#2c3e50'
         else:
-            # Get system default colors when running standalone
             temp_label = tk.Label(self.root)
             parent_bg = temp_label.cget('bg')
             parent_fg = temp_label.cget('fg')
             temp_label.destroy()
         
-        # Determine if we're in dark mode by checking background brightness
         try:
-            # Convert color to RGB if it's a hex value
             if parent_bg.startswith('#'):
                 r, g, b = int(parent_bg[1:3], 16), int(parent_bg[3:5], 16), int(parent_bg[5:7], 16)
             else:
-                # Try to get RGB values from color name
                 rgb = self.root.winfo_rgb(parent_bg)
                 r, g, b = [x // 256 for x in rgb]
             
-            # Calculate brightness (0-255)
             brightness = (r * 299 + g * 587 + b * 114) / 1000
             self.is_dark_mode = brightness < 128
         except:
-            # Fallback to light mode if color parsing fails
             self.is_dark_mode = False
         
-        # Fonts and sizes - consistent with HelloToolbelt
         self.title_font = ("Segoe UI", 14, "bold")
         self.subtitle_font = ("Segoe UI", 11, "bold")
         self.label_font = ("Segoe UI", 10)
@@ -333,9 +264,7 @@ class MultiFileColumnSearchTool:
         self.frame_padx = 20
         self.frame_pady = 15
         
-        # Adaptive color scheme based on detected theme
         if self.is_dark_mode:
-            # Dark mode colors - inherit parent background for transparency
             self.bg_color = parent_bg  # Use parent's background directly
             self.frame_bg = '#3c3c3c'
             self.header_bg = '#4a4a4a'
@@ -345,11 +274,9 @@ class MultiFileColumnSearchTool:
             self.warning_color = '#f39c12'
             self.text_color = parent_fg if parent_fg else '#ffffff'
             self.text_secondary = '#cccccc'
-            # Button text colors - black for both modes
             self.button_text_color = '#000000'  # Black text for good contrast
             self.button_hover_text_color = '#000000'  # Black text for hover state
         else:
-            # Light mode colors - inherit parent background for transparency
             self.bg_color = parent_bg  # Use parent's background directly
             self.frame_bg = '#f8f9fa'
             self.header_bg = '#e9ecef'
@@ -359,22 +286,17 @@ class MultiFileColumnSearchTool:
             self.warning_color = '#f39c12'
             self.text_color = parent_fg if parent_fg else '#2c3e50'
             self.text_secondary = '#34495e'
-            # Button text colors - black for both modes
             self.button_text_color = '#000000'  # Black text for good contrast
             self.button_hover_text_color = '#000000'  # Black text for hover state
 
     def refresh_styling(self, is_dark_mode):
-        """Refresh styling when dark mode is toggled from HelloToolbelt"""
         self.is_dark_mode = is_dark_mode
         
-        # Force update the colors based on the new dark mode state
         if self.is_in_toolbelt:
-            # Get the updated colors from HelloToolbelt container
             try:
                 parent_bg = self.root.cget('bg')
                 parent_fg = self.root.cget('fg')
             except:
-                # Fallback based on dark mode state
                 if is_dark_mode:
                     parent_bg = '#2b2b2b'
                     parent_fg = '#ffffff'
@@ -382,7 +304,6 @@ class MultiFileColumnSearchTool:
                     parent_bg = '#ffffff'
                     parent_fg = '#2c3e50'
         else:
-            # Standalone mode - use appropriate colors
             if is_dark_mode:
                 parent_bg = '#2b2b2b'
                 parent_fg = '#ffffff'
@@ -390,9 +311,7 @@ class MultiFileColumnSearchTool:
                 parent_bg = '#ffffff'
                 parent_fg = '#2c3e50'
         
-        # Update color scheme based on new dark mode state
         if is_dark_mode:
-            # Dark mode colors
             self.bg_color = parent_bg
             self.frame_bg = '#3c3c3c'
             self.header_bg = '#4a4a4a'
@@ -402,11 +321,9 @@ class MultiFileColumnSearchTool:
             self.warning_color = '#f39c12'
             self.text_color = parent_fg
             self.text_secondary = '#cccccc'
-            # Button text colors - black for both modes
             self.button_text_color = '#000000'  # Black text for good contrast
             self.button_hover_text_color = '#000000'  # Black text for hover state
         else:
-            # Light mode colors
             self.bg_color = parent_bg
             self.frame_bg = '#f8f9fa'
             self.header_bg = '#e9ecef'
@@ -416,15 +333,12 @@ class MultiFileColumnSearchTool:
             self.warning_color = '#f39c12'
             self.text_color = parent_fg
             self.text_secondary = '#34495e'
-            # Button text colors - black for both modes
             self.button_text_color = '#000000'  # Black text for good contrast
             self.button_hover_text_color = '#000000'  # Black text for hover state
         
-        # Clear and recreate the interface
         for widget in self.root.winfo_children():
             widget.destroy()
         
-        # Reinitialize the interface
         self.build_interface()
 
     def _center_window(self):
@@ -439,11 +353,9 @@ class MultiFileColumnSearchTool:
         self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
 
     def build_interface(self):
-        # Main container with padding (non-scrollable)
         main_container = tk.Frame(self.root, bg=self.bg_color)
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
-        # Header (stays fixed at top)
         header_frame = tk.Frame(main_container, bg=self.primary_color, relief='flat', bd=0)
         header_frame.pack(fill=tk.X, pady=(0, 20))
         
@@ -457,14 +369,12 @@ class MultiFileColumnSearchTool:
                                font=('Segoe UI', 16, 'bold'), bg=self.primary_color, fg='white')
         header_label.pack(side=tk.LEFT, anchor='w')
         
-        # Create scrollable container for content (scrolls independently)
         self.scrollable_container = ScrollableFrame(main_container, bg_color=self.bg_color, bg=self.bg_color)
         self.scrollable_container.pack(fill=tk.BOTH, expand=True)
         
         content_container = self.scrollable_container.scrollable_frame
         content_container.configure(bg=self.bg_color)
         
-        # Build sections in the scrollable content area
         self._build_folder_selection_section(content_container)
         self._build_column_search_section(content_container)
         self._build_search_values_section(content_container)
@@ -473,24 +383,19 @@ class MultiFileColumnSearchTool:
         self._build_progress_section(content_container)
         self._build_results_section(content_container)
         
-        # Force scroll update after interface is built
         def update_scroll_after_build():
             try:
                 if hasattr(self, 'scrollable_container'):
                     self.scrollable_container.force_scroll_update()
-                    # Also update mouse wheel bindings for new children
                     self.scrollable_container._bind_mousewheel_to_children(self.scrollable_container.scrollable_frame)
             except Exception as e:
                 print(f"Error updating scroll: {e}")
         
-        # Multiple attempts to ensure scrolling works
         self.root.after(100, update_scroll_after_build)
         self.root.after(500, update_scroll_after_build)
         self.root.after(1000, update_scroll_after_build)
 
     def _add_button_hover(self, button, normal_color, hover_color, normal_fg=None, hover_fg=None):
-        """Add hover effects to buttons"""
-        # Use adaptive button text colors if not specified
         if normal_fg is None:
             normal_fg = getattr(self, 'button_text_color', '#000000')
         if hover_fg is None:
@@ -509,7 +414,6 @@ class MultiFileColumnSearchTool:
         folder_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         folder_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Header
         folder_header = tk.Frame(folder_frame, bg=self.header_bg, height=50)
         folder_header.pack(fill=tk.X)
         
@@ -517,7 +421,6 @@ class MultiFileColumnSearchTool:
                                font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         folder_label.pack(pady=15)
         
-        # Content
         folder_content = tk.Frame(folder_frame, bg=self.frame_bg)
         folder_content.pack(fill=tk.X, padx=20, pady=20)
         
@@ -541,7 +444,6 @@ class MultiFileColumnSearchTool:
         
         self._add_button_hover(browse_button, self.success_color, '#229954')
         
-        # Help text
         help_text = ("Select the folder containing your data files. All supported file types will be searched recursively.\n"
                     "The tool will scan through all subdirectories for matching files.")
         help_label = tk.Label(folder_content, text=help_text, font=("Segoe UI", 9), 
@@ -552,7 +454,6 @@ class MultiFileColumnSearchTool:
         column_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         column_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Header
         column_header = tk.Frame(column_frame, bg=self.header_bg, height=50)
         column_header.pack(fill=tk.X)
         
@@ -560,7 +461,6 @@ class MultiFileColumnSearchTool:
                                font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         column_label.pack(pady=15)
         
-        # Content
         column_content = tk.Frame(column_frame, bg=self.frame_bg)
         column_content.pack(fill=tk.X, padx=20, pady=20)
         
@@ -575,7 +475,6 @@ class MultiFileColumnSearchTool:
                                relief='flat', bd=0, width=30)
         column_entry.pack(padx=10, pady=8)
         
-        # Help text
         help_text = ("Enter the exact column header name (case-sensitive). If the column doesn't exist in a file, it will be skipped.\n"
                     "Examples: 'Name', 'Email', 'Customer_ID', 'Product Code'")
         help_label = tk.Label(column_content, text=help_text, font=("Segoe UI", 9), 
@@ -586,7 +485,6 @@ class MultiFileColumnSearchTool:
         values_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         values_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Header
         values_header = tk.Frame(values_frame, bg=self.header_bg, height=50)
         values_header.pack(fill=tk.X)
         
@@ -594,16 +492,13 @@ class MultiFileColumnSearchTool:
                                font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         values_label.pack(pady=15)
         
-        # Content
         values_content = tk.Frame(values_frame, bg=self.frame_bg)
         values_content.pack(fill=tk.X, padx=20, pady=20)
         
-        # Instructions
         instructions_label = tk.Label(values_content, text="Enter multiple search values (one per line):", 
                                      font=self.label_font, bg=self.frame_bg, fg=self.text_secondary)
         instructions_label.pack(anchor="w", pady=(0, 10))
         
-        # Multi-line text widget for search values
         search_values_frame = tk.Frame(values_content, bg=self.bg_color, relief='solid', bd=1)
         search_values_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -617,7 +512,6 @@ class MultiFileColumnSearchTool:
         self.search_values_text.configure(yscrollcommand=values_scrollbar.set)
         values_scrollbar.pack(side=tk.RIGHT, fill="y")
         
-        # Buttons for managing search values
         values_buttons_frame = tk.Frame(values_content, bg=self.frame_bg)
         values_buttons_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -636,7 +530,6 @@ class MultiFileColumnSearchTool:
         self._add_button_hover(load_button, self.primary_color, '#2980b9')
         self._add_button_hover(clear_button, '#95a5a6', '#7f8c8d')
         
-        # Search options
         options_frame = tk.Frame(values_content, bg=self.frame_bg)
         options_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -648,7 +541,6 @@ class MultiFileColumnSearchTool:
         tk.Radiobutton(options_frame, text="Find ALL matches", variable=self.search_mode_var, 
                       value="all", font=self.label_font, bg=self.frame_bg, fg=self.text_color).pack(side=tk.LEFT, padx=(10, 0))
         
-        # Help text
         help_text = ("Tips:\n"
                     "• Type each search term on a separate line\n"
                     "• Use 'Load from File' to import terms from a .txt or .csv file\n"
@@ -663,7 +555,6 @@ class MultiFileColumnSearchTool:
         settings_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         settings_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Header
         settings_header = tk.Frame(settings_frame, bg=self.header_bg, height=50)
         settings_header.pack(fill=tk.X)
         
@@ -671,7 +562,6 @@ class MultiFileColumnSearchTool:
                                  font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         settings_label.pack(pady=15)
         
-        # Content
         settings_content = tk.Frame(settings_frame, bg=self.frame_bg)
         settings_content.pack(fill=tk.X, padx=20, pady=20)
         
@@ -689,7 +579,6 @@ class MultiFileColumnSearchTool:
         tk.Label(delimiter_frame, text=" (for .txt and .tsv files)", font=('Segoe UI', 9), 
                 foreground='#7f8c8d', bg=self.frame_bg).pack(side=tk.LEFT, padx=(5, 0))
         
-        # Help text
         help_text = ("'Auto' will try common delimiters automatically. Choose a specific delimiter if auto-detection fails.\n"
                     "Excel files (.xlsx/.xls) don't require delimiter settings.")
         help_label = tk.Label(settings_content, text=help_text, font=("Segoe UI", 9), 
@@ -700,7 +589,6 @@ class MultiFileColumnSearchTool:
         action_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         action_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Header
         action_header = tk.Frame(action_frame, bg=self.header_bg, height=50)
         action_header.pack(fill=tk.X)
         
@@ -708,7 +596,6 @@ class MultiFileColumnSearchTool:
                                font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         action_label.pack(pady=15)
         
-        # Content
         action_content = tk.Frame(action_frame, bg=self.frame_bg)
         action_content.pack(fill=tk.X, padx=20, pady=20)
         
@@ -730,7 +617,6 @@ class MultiFileColumnSearchTool:
         self._add_button_hover(self.search_button, self.success_color, '#229954')
         self._add_button_hover(self.export_csv_button, self.primary_color, '#2980b9')
         
-        # Status frame
         status_frame = tk.Frame(action_content, bg=self.bg_color, relief='solid', bd=1)
         status_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -742,7 +628,6 @@ class MultiFileColumnSearchTool:
                                            font=("Segoe UI", 10), foreground="#7f8c8d", bg=self.bg_color)
         self.export_status_label.pack(pady=(0, 10), padx=15, anchor="w")
         
-        # Help text
         help_text = ("The search will process all files in the selected folder recursively. "
                     "Results include source file information and can be exported to CSV for further analysis.")
         help_label = tk.Label(action_content, text=help_text, font=("Segoe UI", 9), 
@@ -753,7 +638,6 @@ class MultiFileColumnSearchTool:
         progress_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         progress_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Header
         progress_header = tk.Frame(progress_frame, bg=self.header_bg, height=50)
         progress_header.pack(fill=tk.X)
         
@@ -761,7 +645,6 @@ class MultiFileColumnSearchTool:
                                  font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         progress_label.pack(pady=15)
         
-        # Content
         progress_content = tk.Frame(progress_frame, bg=self.frame_bg)
         progress_content.pack(fill=tk.X, padx=20, pady=20)
         
@@ -776,7 +659,6 @@ class MultiFileColumnSearchTool:
         results_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         results_frame.pack(fill=tk.BOTH, expand=True)
         
-        # Header
         results_header = tk.Frame(results_frame, bg=self.header_bg, height=50)
         results_header.pack(fill=tk.X)
         
@@ -784,11 +666,9 @@ class MultiFileColumnSearchTool:
                                 font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         results_label.pack(pady=15)
         
-        # Content
         results_content = tk.Frame(results_frame, bg=self.frame_bg)
         results_content.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
         
-        # Results text area
         text_frame = tk.Frame(results_content, bg=self.bg_color, relief='solid', bd=1)
         text_frame.pack(fill=tk.BOTH, expand=True)
         
@@ -802,7 +682,6 @@ class MultiFileColumnSearchTool:
         self.search_results_text.pack(fill=tk.BOTH, expand=True)
 
     def load_search_values_from_file(self):
-        """Load search values from a text file"""
         file_path = filedialog.askopenfilename(
             title="Load search values from file",
             filetypes=[("Text files", "*.txt"), ("CSV files", "*.csv"), ("All files", "*.*")]
@@ -815,7 +694,6 @@ class MultiFileColumnSearchTool:
             with open(file_path, 'r', encoding='utf-8') as file:
                 content = file.read()
             
-            # Try to detect if it's CSV and extract first column
             if file_path.lower().endswith('.csv'):
                 try:
                     df = pd.read_csv(file_path)
@@ -825,11 +703,9 @@ class MultiFileColumnSearchTool:
                 except:
                     pass  # Fall back to treating as text file
             
-            # Clear existing content and insert new values
             self.search_values_text.delete(1.0, tk.END)
             self.search_values_text.insert(1.0, content)
             
-            # Count loaded values
             values = self.get_search_values_from_text()
             messagebox.showinfo("Success", f"Loaded {len(values)} search values from file.")
             
@@ -837,16 +713,13 @@ class MultiFileColumnSearchTool:
             messagebox.showerror("Error", f"Failed to load file: {str(e)}")
 
     def clear_search_values(self):
-        """Clear all search values"""
         self.search_values_text.delete(1.0, tk.END)
 
     def get_search_values_from_text(self):
-        """Extract search values from the text widget"""
         content = self.search_values_text.get(1.0, tk.END).strip()
         if not content:
             return []
         
-        # Split by lines and filter out empty lines
         values = [line.strip() for line in content.split('\n') if line.strip()]
         return values
 
@@ -867,7 +740,6 @@ class MultiFileColumnSearchTool:
         return delimiter_map.get(self.search_delimiter.get(), None)
 
     def get_enabled_search_extensions(self):
-        # Return all supported file types since file type selection was removed
         return ['csv', 'xlsx', 'xls', 'tsv', 'txt']
 
     def validate_search_inputs(self):
@@ -980,7 +852,6 @@ class MultiFileColumnSearchTool:
                     continue
                 
                 if file_ext == '.txt' and isinstance(df, dict):
-                    # Handle text file results
                     matches = df
                     if matches['found']:
                         text_results = matches['content'].copy()
@@ -1011,7 +882,6 @@ class MultiFileColumnSearchTool:
                     self.root.after(0, lambda m=msg: self.update_search_results_text(m))
                     continue
                 
-                # Search for multiple values
                 matching_rows, matched_terms = self.find_multiple_matches(df, column_name, search_values, search_mode)
                 
                 if not matching_rows.empty:
@@ -1027,7 +897,6 @@ class MultiFileColumnSearchTool:
                     msg = f"✅ Found {len(matching_rows)} match(es) in {os.path.basename(file_path)}\n"
                     msg += f"   Matched search terms: {', '.join(matched_terms)}\n"
                     
-                    # Group matches by search term for better display
                     term_summary = {}
                     for term in matched_terms:
                         term_matches = df[df[column_name].astype(str).str.contains(str(term), case=False, na=False)]
@@ -1036,7 +905,6 @@ class MultiFileColumnSearchTool:
                     for term, count in term_summary.items():
                         msg += f"     '{term}': {count} match(es)\n"
                     
-                    # Show sample matches
                     for idx, row in matching_rows.head(3).iterrows():
                         context_info = f"{row[column_name]}"
                         other_cols = [col for col in df.columns if col != column_name][:2]
@@ -1056,13 +924,11 @@ class MultiFileColumnSearchTool:
                 msg = f"❌ Error reading {os.path.basename(file_path)}: {str(e)}\n"
                 self.root.after(0, lambda m=msg: self.update_search_results_text(m))
         
-        # Final progress update
         self.root.after(0, lambda: self.update_search_progress(100, total_files, f"Completed searching {total_files} files"))
         
         return results
 
     def find_multiple_matches(self, df, column_name, search_values, search_mode):
-        """Find matches for multiple search values"""
         all_matches = pd.DataFrame()
         matched_terms = set()
         
@@ -1073,20 +939,16 @@ class MultiFileColumnSearchTool:
             if not value_matches.empty:
                 matched_terms.add(search_value)
                 if search_mode == "any":
-                    # For ANY mode, collect all matches
                     all_matches = pd.concat([all_matches, value_matches]).drop_duplicates()
                 elif search_mode == "all":
-                    # For ALL mode, we need to find rows that match ALL terms
                     if all_matches.empty:
                         all_matches = value_matches
                     else:
-                        # Keep only rows that are in both sets
                         all_matches = all_matches[all_matches.index.isin(value_matches.index)]
         
         return all_matches, list(matched_terms)
 
     def handle_search_txt_file_multiple(self, file_path, column_name, search_values):
-        """Handle text file search for multiple values"""
         try:
             selected_delimiter = self.get_selected_search_delimiter()
             
@@ -1112,7 +974,6 @@ class MultiFileColumnSearchTool:
                 return None
 
     def search_plain_text_file_multiple(self, file_path, search_values, encoding='utf-8'):
-        """Search plain text file for multiple values"""
         try:
             with open(file_path, 'r', encoding=encoding) as file:
                 lines = file.readlines()
@@ -1203,7 +1064,6 @@ class MultiFileColumnSearchTool:
             self.update_search_results_text(f"Total matches found: {total_matches}\n")
             self.update_search_results_text(f"Files with matches: {len(self.search_results)}\n")
             
-            # Count unique matched terms across all results
             all_matched_terms = set()
             for result in self.search_results.values():
                 if isinstance(result, pd.DataFrame) and 'Matched_Terms' in result.columns:
@@ -1258,7 +1118,6 @@ class MultiFileColumnSearchTool:
                 combined_df = pd.concat(all_results, ignore_index=True)
                 combined_df.to_csv(file_path, index=False)
                 
-                # Show summary of exported data
                 search_values = self.get_search_values_from_text()
                 messagebox.showinfo("Export Successful", 
                                    f"✅ Exported {len(combined_df):,} results to CSV!\n\n"

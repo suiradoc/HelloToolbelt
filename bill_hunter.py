@@ -10,7 +10,6 @@ try:
 except ImportError:
     PSYCOPG2_AVAILABLE = False
 
-# AWS SDK imports - boto3 instead of AWS CLI subprocess
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError, ProfileNotFound
@@ -19,67 +18,77 @@ except ImportError:
     BOTO3_AVAILABLE = False
     print("WARNING: boto3 not installed. S3 features will not work. Install with: pip install boto3")
 
+DATE_PARSE_FORMATS = ['%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%d/%m/%Y', '%Y/%m/%d', '%Y%m%d',
+                      '%Y-%m-%d %H:%M:%S', '%m/%d/%Y %H:%M:%S']
+
+def format_file_size(size_bytes):
+    try:
+        size_int = int(size_bytes)
+        if size_int < 1024:
+            return f"{size_int} B"
+        elif size_int < 1024 * 1024:
+            return f"{size_int / 1024:.1f} KB"
+        elif size_int < 1024 * 1024 * 1024:
+            return f"{size_int / (1024 * 1024):.1f} MB"
+        else:
+            return f"{size_int / (1024 * 1024 * 1024):.2f} GB"
+    except:
+        return str(size_bytes)
+
+def parse_date(date_str, formats=None):
+    if not date_str or not str(date_str).strip():
+        return None
+    formats = formats or DATE_PARSE_FORMATS
+    date_str = str(date_str).strip()
+    for fmt in formats:
+        try:
+            return datetime.strptime(date_str, fmt)
+        except ValueError:
+            continue
+    return None
+
 class ScrollableFrame(tk.Frame):
     def __init__(self, parent, bg_color='#ffffff', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
-        # Store parent reference
         self.parent = parent
         
-        # Create container
         container = tk.Frame(self, bg=bg_color)
         container.pack(fill="both", expand=True)
         
-        # Canvas and scrollbars (removed horizontal scrollbar)
         self.canvas = tk.Canvas(container, highlightthickness=0, bg=bg_color)
         self.scrollbar_v = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
         
-        # Scrollable frame
         self.scrollable_frame = tk.Frame(self.canvas, bg=bg_color)
         
-        # Configure canvas (removed horizontal scrolling)
         self.canvas.configure(yscrollcommand=self.scrollbar_v.set)
         self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         
-        # Pack components (removed horizontal scrollbar packing)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar_v.pack(side="right", fill="y")
         
-        # Scrolling state
         self.canvas_has_focus = False
         
-        # Bind events
         self.scrollable_frame.bind("<Configure>", self._on_frame_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         
-        # Setup scrolling based on environment
         self._setup_scrolling()
         
     def _setup_scrolling(self):
-        """Setup scrolling - works for both standalone and HelloToolbelt"""
-        # Check if we're in HelloToolbelt
         self.in_toolbelt = self._detect_hellotoolbelt()
         
-        # Always bind enter/leave for focus tracking
         self.canvas.bind("<Enter>", self._on_enter)
         self.canvas.bind("<Leave>", self._on_leave)
-        
-        # Bind mouse wheel events
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
-        
-        # Linux support
         self.canvas.bind("<Button-4>", self._on_mousewheel_linux)
         self.canvas.bind("<Button-5>", self._on_mousewheel_linux)
         
-        # Also bind to the scrollable frame itself
         self._bind_mousewheel_to_children(self.scrollable_frame)
         
     def _detect_hellotoolbelt(self):
-        """Detect if we're running inside HelloToolbelt"""
         try:
             current_parent = self.parent
             while current_parent:
-                # Look for HelloToolbelt MockRoot characteristics
                 if (hasattr(current_parent, '_title') and 
                     hasattr(current_parent, 'pack') and 
                     hasattr(current_parent, '_current_bg')):
@@ -93,7 +102,6 @@ class ScrollableFrame(tk.Frame):
             return False
         
     def _bind_mousewheel_to_children(self, widget):
-        """Recursively bind mousewheel to all child widgets"""
         try:
             widget.bind("<MouseWheel>", self._on_mousewheel)
             widget.bind("<Button-4>", self._on_mousewheel_linux)
@@ -105,7 +113,6 @@ class ScrollableFrame(tk.Frame):
             pass
     
     def _on_enter(self, event):
-        """Mouse entered canvas"""
         self.canvas_has_focus = True
         try:
             self.canvas.focus_set()
@@ -113,23 +120,17 @@ class ScrollableFrame(tk.Frame):
             pass
         
     def _on_leave(self, event):
-        """Mouse left canvas"""
         self.canvas_has_focus = False
         
     def _on_mousewheel(self, event):
-        """Universal mouse wheel handler"""
-        # In HelloToolbelt mode, only scroll if we have focus
         if self.in_toolbelt and not self.canvas_has_focus:
             return "break"
-        
         return self._do_scroll(event)
         
     def _on_mousewheel_linux(self, event):
-        """Linux scroll wheel support"""
         if self.in_toolbelt and not self.canvas_has_focus:
             return "break"
         
-        # Convert Linux button events to scroll
         if event.num == 4:
             delta = -1
         elif event.num == 5:
@@ -140,80 +141,52 @@ class ScrollableFrame(tk.Frame):
         return self._do_scroll_with_delta(delta)
     
     def _do_scroll(self, event):
-        """Perform the actual scrolling"""
         try:
-            # Calculate delta
             if hasattr(event, 'delta'):
                 delta = int(-1 * (event.delta / 120))
             else:
                 return "break"
-            
             return self._do_scroll_with_delta(delta)
-            
         except Exception:
             return "break"
     
     def _do_scroll_with_delta(self, delta):
-        """Perform scrolling with given delta"""
         try:
-            # Limit scroll speed
             delta = max(-3, min(3, delta))
-            
-            # Get current scroll position
             current_top, current_bottom = self.canvas.yview()
-            
-            # Get canvas and scrollable frame dimensions
             canvas_height = self.canvas.winfo_height()
-            self.canvas.update_idletasks()  # Ensure geometry is up to date
+            self.canvas.update_idletasks()
             
-            # Get the bounding box of all items in canvas
             bbox = self.canvas.bbox("all")
             if not bbox:
-                # No content to scroll
                 return "break"
             
-            # Calculate total content height
-            content_height = bbox[3] - bbox[1]  # bottom - top
+            content_height = bbox[3] - bbox[1]
             
-            # If content fits entirely in canvas, don't allow scrolling
             if content_height <= canvas_height:
                 return "break"
             
-            # Calculate scroll boundaries more precisely
-            # current_top and current_bottom are fractions (0.0 to 1.0)
-            scroll_top = current_top
-            scroll_bottom = current_bottom
-            
-            # Prevent scrolling up if already at top
-            if delta < 0 and scroll_top <= 0.0:
+            if delta < 0 and current_top <= 0.0:
                 return "break"
-                
-            # Prevent scrolling down if already at bottom
-            if delta > 0 and scroll_bottom >= 1.0:
+            if delta > 0 and current_bottom >= 1.0:
                 return "break"
             
-            # Perform scroll
             self.canvas.yview_scroll(delta, "units")
             return "break"
-            
-        except Exception as e:
-            print(f"Scroll error: {e}")
+        except Exception:
             return "break"
         
     def check_scroll_needed(self):
-        """Check if scrolling is needed and update scrollbar visibility"""
         try:
             self.canvas.update_idletasks()
             bbox = self.canvas.bbox("all")
             if not bbox:
-                # Hide scrollbar if no content
                 self.scrollbar_v.pack_forget()
                 return False
             
             canvas_height = self.canvas.winfo_height()
             content_height = bbox[3] - bbox[1]
             
-            # Show/hide scrollbars based on need
             if content_height > canvas_height:
                 self.scrollbar_v.pack(side="right", fill="y")
                 return True
@@ -224,46 +197,34 @@ class ScrollableFrame(tk.Frame):
             return False
     
     def _on_frame_configure(self, event):
-        """Update scroll region when frame size changes"""
         try:
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-            # Check if scrollbars are needed after content change
             self.canvas.after_idle(self.check_scroll_needed)
         except Exception:
             pass
         
     def _on_canvas_configure(self, event):
-        """Update canvas window size when canvas is resized"""
         try:
-            canvas_width = event.width
-            # Ensure the scrollable frame matches the canvas width to prevent horizontal scrolling
-            self.canvas.itemconfig(self.canvas_window, width=canvas_width)
-            # Also update scroll region when canvas is resized
+            self.canvas.itemconfig(self.canvas_window, width=event.width)
             self.canvas.after_idle(self._update_scroll_region)
-            # Check if scrollbars are needed after resize
             self.canvas.after_idle(self.check_scroll_needed)
         except Exception:
             pass
     
     def _update_scroll_region(self):
-        """Force update the scroll region"""
         try:
             self.canvas.update_idletasks()
             bbox = self.canvas.bbox("all")
             if bbox:
-                # Only set the scroll region for vertical scrolling
                 self.canvas.configure(scrollregion=(0, bbox[1], 0, bbox[3]))
         except Exception:
             pass
     
     def force_scroll_update(self):
-        """Public method to force scroll region update and rebind events"""
         self.canvas.after_idle(self._update_scroll_region)
-        # Rebind mousewheel to any new children
         self.canvas.after_idle(lambda: self._bind_mousewheel_to_children(self.scrollable_frame))
 
 class S3FileBrowserWidget(tk.Frame):
-    """Integrated S3 file browser widget for BillHunter tab"""
     def __init__(self, parent, bucket="s3.hello.do.integration", initial_prefix="clients/", 
                  profile="default", on_file_select=None, bg_color='#ffffff', auto_load=True, **kwargs):
         super().__init__(parent, bg=bg_color, **kwargs)
@@ -271,34 +232,27 @@ class S3FileBrowserWidget(tk.Frame):
         self.bucket = bucket
         self.profile = profile
         self.current_prefix = initial_prefix
-        self.on_file_select = on_file_select  # Callback when file is selected
+        self.on_file_select = on_file_select
         self.bg_color = bg_color
         
-        # Store all items for filtering
-        self.all_items = []  # Store (text, values, tags) tuples
+        self.all_items = []
         
-        # Track sort state for columns
         self.sort_reverse = {}
         self.current_sort_column = None
         
-        # Styling
         self.frame_bg = '#f8f9fa'
         self.header_bg = '#e9ecef'
         self.primary_color = '#0a9640'
         
         self._build_ui()
         
-        # Load initial folder after a short delay (if auto_load is True)
         if auto_load:
             self.after(500, lambda: self.load_folder(self.current_prefix))
     
     def _build_ui(self):
-        """Build the S3 browser UI"""
-        # Container frame
         container = tk.Frame(self, bg=self.frame_bg, relief='solid', bd=1)
         container.pack(fill=tk.BOTH, expand=True)
         
-        # Header
         header = tk.Frame(container, bg=self.header_bg)
         header.pack(fill=tk.X)
         
@@ -308,7 +262,6 @@ class S3FileBrowserWidget(tk.Frame):
         tk.Label(header_content, text="☁️ S3 File Browser", 
                 font=('Segoe UI', 11, 'bold'), bg=self.header_bg).pack(side=tk.LEFT)
         
-        # Search/Filter box for current folder
         search_frame = tk.Frame(header_content, bg=self.header_bg)
         search_frame.pack(side=tk.RIGHT, padx=(10, 0))
         
@@ -331,24 +284,20 @@ class S3FileBrowserWidget(tk.Frame):
                                      padx=3, pady=0, relief='flat', bd=0, cursor="hand2")
         clear_search_btn.pack(side=tk.LEFT, padx=(2, 0))
         
-        # Refresh button
         self.refresh_btn = tk.Button(header_content, text="🔄", command=self.refresh,
                                      bg=self.header_bg, font=('Segoe UI', 10),
                                      padx=8, pady=2, relief='flat', bd=0, cursor="hand2")
         self.refresh_btn.pack(side=tk.RIGHT)
         
-        # Path display and navigation
         nav_frame = tk.Frame(container, bg=self.bg_color)
         nav_frame.pack(fill=tk.X, padx=10, pady=8)
         
-        # Back button
         self.back_btn = tk.Button(nav_frame, text="⬆️", command=self.go_up,
                                   bg='#e9ecef', font=('Segoe UI', 9),
                                   padx=8, pady=3, relief='flat', bd=0, cursor="hand2",
                                   state=tk.DISABLED)
         self.back_btn.pack(side=tk.LEFT, padx=(0, 8))
         
-        # Path label
         path_container = tk.Frame(nav_frame, bg='#e9ecef', relief='solid', bd=1)
         path_container.pack(side=tk.LEFT, fill=tk.X, expand=True)
         
@@ -357,15 +306,12 @@ class S3FileBrowserWidget(tk.Frame):
                                    anchor='w', padx=8, pady=4)
         self.path_label.pack(fill=tk.X)
         
-        # Tree view frame
         tree_frame = tk.Frame(container, bg=self.bg_color)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
         
-        # Scrollbars
         vsb = ttk.Scrollbar(tree_frame, orient="vertical")
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal")
         
-        # Treeview
         self.tree = ttk.Treeview(tree_frame, 
                                 columns=('Type', 'Size', 'Modified'),
                                 yscrollcommand=vsb.set,
@@ -375,7 +321,6 @@ class S3FileBrowserWidget(tk.Frame):
         vsb.config(command=self.tree.yview)
         hsb.config(command=self.tree.xview)
         
-        # Configure columns
         self.tree.heading('#0', text='Name', command=lambda: self.sort_tree_column('#0'))
         self.tree.heading('Type', text='Type', command=lambda: self.sort_tree_column('Type'))
         self.tree.heading('Size', text='Size', command=lambda: self.sort_tree_column('Size'))
@@ -386,16 +331,13 @@ class S3FileBrowserWidget(tk.Frame):
         self.tree.column('Size', width=100)
         self.tree.column('Modified', width=150)
         
-        # Pack
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(fill=tk.BOTH, expand=True)
         
-        # Bind events
         self.tree.bind('<Double-1>', self.on_double_click)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
         
-        # Status bar
         status_frame = tk.Frame(container, bg=self.frame_bg)
         status_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
         
@@ -410,12 +352,10 @@ class S3FileBrowserWidget(tk.Frame):
         self.selection_label.pack(side=tk.RIGHT)
     
     def load_folder(self, prefix):
-        """Load folder contents from S3 using boto3"""
         if not BOTO3_AVAILABLE:
             self.status_label.config(text="❌ boto3 not installed. Run: pip install boto3")
             return
         
-        # Clear tree
         for item in self.tree.get_children():
             self.tree.delete(item)
         
@@ -424,7 +364,6 @@ class S3FileBrowserWidget(tk.Frame):
         self.update()
         
         try:
-            # Create S3 client with profile if specified
             session_kwargs = {}
             if self.profile and self.profile != "default":
                 session_kwargs['profile_name'] = self.profile
@@ -432,7 +371,6 @@ class S3FileBrowserWidget(tk.Frame):
             session = boto3.Session(**session_kwargs)
             s3_client = session.client('s3')
             
-            # List objects with pagination support
             list_kwargs = {
                 'Bucket': self.bucket,
                 'Prefix': prefix,
@@ -444,14 +382,12 @@ class S3FileBrowserWidget(tk.Frame):
             folders = []
             files = []
             
-            # Process folders (CommonPrefixes)
             for prefix_info in response.get('CommonPrefixes', []):
                 folder_path = prefix_info['Prefix']
                 folder_name = folder_path.rstrip('/').split('/')[-1]
                 if folder_name:
                     folders.append(folder_name)
             
-            # Process files (Contents)
             for obj in response.get('Contents', []):
                 key = obj['Key']
                 
@@ -466,28 +402,13 @@ class S3FileBrowserWidget(tk.Frame):
                 modified = obj['LastModified'].strftime('%Y-%m-%d %H:%M:%S')
                 files.append((filename, size, modified))
             
-            # Add folders
             for folder in sorted(folders):
                 self.tree.insert('', 'end', text=f"📁 {folder}", 
                                values=('Folder', '--', ''), tags=('folder',))
             
-            # Add files
             for filename, size, modified in sorted(files):
-                # Format size
-                try:
-                    size_int = int(size)
-                    if size_int < 1024:
-                        size_str = f"{size_int} B"
-                    elif size_int < 1024 * 1024:
-                        size_str = f"{size_int / 1024:.1f} KB"
-                    elif size_int < 1024 * 1024 * 1024:
-                        size_str = f"{size_int / (1024 * 1024):.1f} MB"
-                    else:
-                        size_str = f"{size_int / (1024 * 1024 * 1024):.2f} GB"
-                except:
-                    size_str = str(size)
+                size_str = format_file_size(size)
                 
-                # Determine file icon
                 if filename.endswith('.csv'):
                     icon = '📊'
                 elif filename.endswith('.txt'):
@@ -500,7 +421,6 @@ class S3FileBrowserWidget(tk.Frame):
                 self.tree.insert('', 'end', text=f"{icon} {filename}", 
                                values=('File', size_str, modified), tags=('file',))
             
-            # Store all items for filtering
             self.all_items = []
             for item in self.tree.get_children():
                 item_text = self.tree.item(item, 'text')
@@ -508,17 +428,14 @@ class S3FileBrowserWidget(tk.Frame):
                 item_tags = self.tree.item(item, 'tags')
                 self.all_items.append((item_text, item_values, item_tags))
             
-            # Update status
             folder_count = len(folders)
             file_count = len(files)
             self.status_label.config(text=f"✓ {folder_count} folder(s), {file_count} file(s)")
             
-            # Update path
             self.current_prefix = prefix
             path_display = f"s3://{self.bucket}/{prefix}" if prefix else f"s3://{self.bucket}/"
             self.path_label.config(text=path_display)
             
-            # Enable/disable back button
             if prefix and prefix != "clients/":
                 self.back_btn.config(state=tk.NORMAL)
             else:
@@ -542,7 +459,6 @@ class S3FileBrowserWidget(tk.Frame):
             print(f"S3 Browser Error: {error_msg}")
     
     def on_double_click(self, event):
-        """Handle double-click"""
         selection = self.tree.selection()
         if not selection:
             return
@@ -551,15 +467,12 @@ class S3FileBrowserWidget(tk.Frame):
         tags = self.tree.item(item, 'tags')
         
         if 'folder' in tags:
-            # Navigate into folder
             item_text = self.tree.item(item, 'text')
             folder_name = item_text.replace('📁 ', '')
             new_prefix = f"{self.current_prefix}{folder_name}/" if self.current_prefix else f"{folder_name}/"
             self.load_folder(new_prefix)
         elif 'file' in tags and self.on_file_select:
-            # Select file
             item_text = self.tree.item(item, 'text')
-            # Remove icon
             for icon in ['📊', '📄', '📋']:
                 item_text = item_text.replace(f"{icon} ", '')
             
@@ -567,7 +480,6 @@ class S3FileBrowserWidget(tk.Frame):
             self.on_file_select(full_key)
     
     def on_select(self, event):
-        """Handle selection change"""
         selection = self.tree.selection()
         if not selection:
             self.selection_label.config(text="")
@@ -578,7 +490,6 @@ class S3FileBrowserWidget(tk.Frame):
         
         if 'file' in tags:
             item_text = self.tree.item(item, 'text')
-            # Remove icon
             for icon in ['📊', '📄', '📋']:
                 item_text = item_text.replace(f"{icon} ", '')
             self.selection_label.config(text=f"Selected: {item_text}")
@@ -586,14 +497,11 @@ class S3FileBrowserWidget(tk.Frame):
             self.selection_label.config(text="")
     
     def go_up(self):
-        """Go to parent folder"""
         if not self.current_prefix or self.current_prefix == "clients/":
             return
         
-        # Remove trailing slash
         prefix = self.current_prefix.rstrip('/')
         
-        # Go up one level
         if '/' in prefix:
             new_prefix = prefix.rsplit('/', 1)[0] + '/'
         else:
@@ -602,11 +510,9 @@ class S3FileBrowserWidget(tk.Frame):
         self.load_folder(new_prefix)
     
     def refresh(self):
-        """Refresh current folder"""
         self.load_folder(self.current_prefix)
     
     def get_selected_file(self):
-        """Get the currently selected file path"""
         selection = self.tree.selection()
         if not selection:
             return None
@@ -618,7 +524,6 @@ class S3FileBrowserWidget(tk.Frame):
             return None
         
         item_text = self.tree.item(item, 'text')
-        # Remove icons
         for icon in ['📊', '📄', '📋']:
             item_text = item_text.replace(f"{icon} ", '')
         
@@ -626,65 +531,52 @@ class S3FileBrowserWidget(tk.Frame):
         return full_key
     
     def _on_search_focus_in(self, event):
-        """Clear placeholder text on focus"""
         if self.search_entry.get() == "Filter files...":
             self.search_entry.delete(0, tk.END)
             self.search_entry.config(fg='black')
     
     def _on_search_focus_out(self, event):
-        """Restore placeholder text if empty"""
         if not self.search_entry.get():
             self.search_entry.insert(0, "Filter files...")
             self.search_entry.config(fg='gray')
     
     def filter_current_view(self):
-        """Filter the currently displayed files and folders"""
         search_term = self.search_var.get().lower()
         
-        # Skip if placeholder text is showing
         if search_term == "filter files...":
             return
         
-        # Clear current display
         for item in self.tree.get_children():
             self.tree.delete(item)
         
         if not search_term or search_term.strip() == "":
-            # Show all items if search is empty
             for text, values, tags in self.all_items:
                 self.tree.insert('', 'end', text=text, values=values, tags=tags)
         else:
-            # Show only matching items
             matching_count = 0
             for text, values, tags in self.all_items:
-                # Search in the filename (remove icon first)
                 clean_text = text.replace('📁 ', '').replace('📊 ', '').replace('📄 ', '').replace('📋 ', '')
                 if search_term in clean_text.lower():
                     self.tree.insert('', 'end', text=text, values=values, tags=tags)
                     matching_count += 1
             
-            # Update status with match count
             if matching_count == 0:
                 self.status_label.config(text=f"No matches for '{search_term}'")
             else:
                 self.status_label.config(text=f"Showing {matching_count} of {len(self.all_items)} items")
     
     def clear_filter(self):
-        """Clear the search filter"""
         self.search_var.set('')
         self.search_entry.delete(0, tk.END)
         self.search_entry.insert(0, "Filter files...")
         self.search_entry.config(fg='gray')
         self.filter_current_view()
         
-        # Restore original status
         folder_count = sum(1 for _, values, _ in self.all_items if values[0] == 'Folder')
         file_count = len(self.all_items) - folder_count
         self.status_label.config(text=f"✓ {folder_count} folder(s), {file_count} file(s)")
     
     def sort_tree_column(self, col):
-        """Sort tree by the specified column"""
-        # Get all items with their data
         items = []
         for item_id in self.tree.get_children():
             if col == '#0':
@@ -695,24 +587,19 @@ class S3FileBrowserWidget(tk.Frame):
                 value = values[col_index]
             items.append((value, item_id))
         
-        # Toggle sort direction
         reverse = self.sort_reverse.get(col, False)
         self.sort_reverse[col] = not reverse
         self.current_sort_column = col
         
-        # Sort based on column type
         if col == 'Modified':
-            # Sort by date
             def date_sort_key(item):
                 val = item[0]
                 if not val or val == '' or val == '--':
                     return datetime.min if not reverse else datetime.max
                 try:
-                    # Parse date format: "2024-01-15 10:30:00"
                     return datetime.strptime(val, "%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     try:
-                        # Try without time
                         return datetime.strptime(val, "%Y-%m-%d")
                     except ValueError:
                         return datetime.min if not reverse else datetime.max
@@ -720,13 +607,11 @@ class S3FileBrowserWidget(tk.Frame):
             items.sort(key=date_sort_key, reverse=reverse)
         
         elif col == 'Size':
-            # Sort by size (convert back to bytes for proper sorting)
             def size_sort_key(item):
                 val = item[0]
                 if val == '--':
                     return -1 if not reverse else float('inf')
                 try:
-                    # Parse size string like "1.2 MB", "500 KB", "100 B"
                     if ' B' in val:
                         return float(val.replace(' B', ''))
                     elif ' KB' in val:
@@ -743,10 +628,8 @@ class S3FileBrowserWidget(tk.Frame):
             items.sort(key=size_sort_key, reverse=reverse)
         
         elif col == 'Type':
-            # Sort folders first, then files
             def type_sort_key(item):
                 val = item[0]
-                # Folders come first
                 if val == 'Folder':
                     return (0, '') if not reverse else (1, '')
                 else:
@@ -754,24 +637,18 @@ class S3FileBrowserWidget(tk.Frame):
             
             items.sort(key=type_sort_key, reverse=reverse)
         
-        else:  # Name column
-            # Sort alphabetically, but keep folders together at top
+        else:
             def name_sort_key(item):
                 text = item[0]
-                # Remove icons for sorting
                 clean_text = text.replace('📁 ', '').replace('📊 ', '').replace('📄 ', '').replace('📋 ', '')
-                # Check if folder by looking for icon
                 is_folder = '📁' in text
-                # Sort folders first, then by name
                 return (0 if is_folder else 1, clean_text.lower()) if not reverse else (1 if is_folder else 0, clean_text.lower())
             
             items.sort(key=name_sort_key, reverse=reverse)
         
-        # Reorder items in tree
         for index, (value, item_id) in enumerate(items):
             self.tree.move(item_id, '', index)
         
-        # Update column headers with sort indicators
         for column in ['#0', 'Type', 'Size', 'Modified']:
             if column == col:
                 if column == '#0':
@@ -790,21 +667,18 @@ class S3FileBrowserWidget(tk.Frame):
                                     command=lambda c=column: self.sort_tree_column(c))
 
 class S3BrowserDialog:
-    """Dialog for browsing S3 folders and selecting files"""
     def __init__(self, parent, bucket, initial_prefix="", profile="default"):
         self.result = None
         self.bucket = bucket
         self.profile = profile
         self.current_prefix = initial_prefix
         
-        # Create dialog window
         self.dialog = tk.Toplevel(parent)
         self.dialog.title(f"Browse S3: {bucket}")
         self.dialog.geometry("700x500")
         self.dialog.transient(parent)
         self.dialog.grab_set()
         
-        # Center the window
         self.dialog.update_idletasks()
         x = (self.dialog.winfo_screenwidth() // 2) - 350
         y = (self.dialog.winfo_screenheight() // 2) - 250
@@ -812,12 +686,9 @@ class S3BrowserDialog:
         
         self._build_ui()
         
-        # Load initial folder
         self.load_folder(self.current_prefix)
         
     def _build_ui(self):
-        """Build the UI for S3 browser"""
-        # Header frame
         header_frame = tk.Frame(self.dialog, bg='#0a9640', relief='flat', bd=0)
         header_frame.pack(fill=tk.X)
         
@@ -827,7 +698,6 @@ class S3BrowserDialog:
         tk.Label(header_content, text="☁️ S3 Browser", 
                 font=('Segoe UI', 14, 'bold'), bg='#0a9640', fg='white').pack(side=tk.LEFT)
         
-        # Path display frame
         path_frame = tk.Frame(self.dialog, bg='#f8f9fa')
         path_frame.pack(fill=tk.X, padx=15, pady=10)
         
@@ -838,7 +708,6 @@ class S3BrowserDialog:
                                    font=('Segoe UI', 9, 'bold'), bg='#f8f9fa', fg='#0a9640')
         self.path_label.pack(side=tk.LEFT)
         
-        # Back button
         button_frame = tk.Frame(self.dialog, bg='white')
         button_frame.pack(fill=tk.X, padx=15, pady=(0, 10))
         
@@ -847,15 +716,12 @@ class S3BrowserDialog:
                                   relief='flat', bd=0, cursor="hand2")
         self.back_btn.pack(side=tk.LEFT)
         
-        # Treeview for folders and files
         tree_frame = tk.Frame(self.dialog)
         tree_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=(0, 10))
         
-        # Scrollbars
         vsb = ttk.Scrollbar(tree_frame, orient="vertical")
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal")
         
-        # Treeview
         self.tree = ttk.Treeview(tree_frame, 
                                 columns=('Type', 'Size'),
                                 yscrollcommand=vsb.set,
@@ -864,7 +730,6 @@ class S3BrowserDialog:
         vsb.config(command=self.tree.yview)
         hsb.config(command=self.tree.xview)
         
-        # Configure columns
         self.tree.heading('#0', text='Name')
         self.tree.heading('Type', text='Type')
         self.tree.heading('Size', text='Size')
@@ -873,21 +738,17 @@ class S3BrowserDialog:
         self.tree.column('Type', width=100)
         self.tree.column('Size', width=100)
         
-        # Pack scrollbars and tree
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(fill=tk.BOTH, expand=True)
         
-        # Bind double-click and selection
         self.tree.bind('<Double-1>', self.on_double_click)
         self.tree.bind('<<TreeviewSelect>>', self.on_select)
         
-        # Status label
         self.status_label = tk.Label(self.dialog, text="Loading...", 
                                      font=('Segoe UI', 9), fg='gray')
         self.status_label.pack(pady=(0, 10))
         
-        # Button frame
         btn_frame = tk.Frame(self.dialog, bg='white')
         btn_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
         
@@ -903,12 +764,10 @@ class S3BrowserDialog:
         cancel_btn.pack(side=tk.RIGHT)
     
     def load_folder(self, prefix):
-        """Load folder contents from S3 using boto3"""
         if not BOTO3_AVAILABLE:
             self.status_label.config(text="Error: boto3 not installed. Run: pip install boto3")
             return
         
-        # Clear tree
         for item in self.tree.get_children():
             self.tree.delete(item)
         
@@ -916,7 +775,6 @@ class S3BrowserDialog:
         self.dialog.update()
         
         try:
-            # Create S3 client with profile if specified
             session_kwargs = {}
             if self.profile and self.profile != "default":
                 session_kwargs['profile_name'] = self.profile
@@ -924,7 +782,6 @@ class S3BrowserDialog:
             session = boto3.Session(**session_kwargs)
             s3_client = session.client('s3')
             
-            # List objects
             list_kwargs = {
                 'Bucket': self.bucket,
                 'Prefix': prefix,
@@ -936,14 +793,12 @@ class S3BrowserDialog:
             folders = []
             files = []
             
-            # Process folders
             for prefix_info in response.get('CommonPrefixes', []):
                 folder_path = prefix_info['Prefix']
                 folder_name = folder_path.rstrip('/').split('/')[-1]
                 if folder_name:
                     folders.append(folder_name)
             
-            # Process files
             for obj in response.get('Contents', []):
                 key = obj['Key']
                 
@@ -957,40 +812,25 @@ class S3BrowserDialog:
                 size = obj['Size']
                 files.append((filename, size))
             
-            # Add folders first
             for folder in sorted(folders):
                 self.tree.insert('', 'end', text=f"📁 {folder}", 
                                values=('Folder', ''), tags=('folder',))
             
-            # Add files
             for filename, size in sorted(files):
-                # Format size
-                try:
-                    size_int = int(size)
-                    if size_int < 1024:
-                        size_str = f"{size_int} B"
-                    elif size_int < 1024 * 1024:
-                        size_str = f"{size_int / 1024:.1f} KB"
-                    else:
-                        size_str = f"{size_int / (1024 * 1024):.1f} MB"
-                except:
-                    size_str = str(size)
+                size_str = format_file_size(size)
                 
                 self.tree.insert('', 'end', text=f"📄 {filename}", 
                                values=('File', size_str), tags=('file',))
             
-            # Update status
             folder_count = len(folders)
             file_count = len(files)
             status_text = f"{folder_count} folder(s), {file_count} file(s)"
             self.status_label.config(text=status_text)
             
-            # Update current prefix
             self.current_prefix = prefix
             path_display = f"s3://{self.bucket}/{prefix}" if prefix else f"s3://{self.bucket}/"
             self.path_label.config(text=path_display)
             
-            # Enable/disable back button
             if prefix:
                 self.back_btn.config(state=tk.NORMAL)
             else:
@@ -1007,7 +847,6 @@ class S3BrowserDialog:
             self.status_label.config(text=f"Error: {str(e)}")
     
     def on_double_click(self, event):
-        """Handle double-click on item"""
         selection = self.tree.selection()
         if not selection:
             return
@@ -1016,17 +855,14 @@ class S3BrowserDialog:
         tags = self.tree.item(item, 'tags')
         
         if 'folder' in tags:
-            # Navigate into folder
             item_text = self.tree.item(item, 'text')
             folder_name = item_text.replace('📁 ', '')
             new_prefix = f"{self.current_prefix}{folder_name}/" if self.current_prefix else f"{folder_name}/"
             self.load_folder(new_prefix)
         elif 'file' in tags:
-            # Select file
             self.select_file()
     
     def on_select(self, event):
-        """Handle selection change"""
         selection = self.tree.selection()
         if not selection:
             self.select_btn.config(state=tk.DISABLED)
@@ -1035,21 +871,17 @@ class S3BrowserDialog:
         item = selection[0]
         tags = self.tree.item(item, 'tags')
         
-        # Only enable select button for files
         if 'file' in tags:
             self.select_btn.config(state=tk.NORMAL)
         else:
             self.select_btn.config(state=tk.DISABLED)
     
     def go_up(self):
-        """Go up one directory level"""
         if not self.current_prefix:
             return
         
-        # Remove trailing slash
         prefix = self.current_prefix.rstrip('/')
         
-        # Go up one level
         if '/' in prefix:
             new_prefix = prefix.rsplit('/', 1)[0] + '/'
         else:
@@ -1058,7 +890,6 @@ class S3BrowserDialog:
         self.load_folder(new_prefix)
     
     def select_file(self):
-        """Select the current file and close dialog"""
         selection = self.tree.selection()
         if not selection:
             return
@@ -1070,16 +901,13 @@ class S3BrowserDialog:
             messagebox.showwarning("Invalid Selection", "Please select a file, not a folder.")
             return
         
-        # Get filename
         item_text = self.tree.item(item, 'text')
         filename = item_text.replace('📄 ', '')
         
-        # Build full S3 key
         self.result = f"{self.current_prefix}{filename}" if self.current_prefix else filename
         self.dialog.destroy()
     
     def cancel(self):
-        """Cancel and close dialog"""
         self.result = None
         self.dialog.destroy()
 
@@ -1088,7 +916,6 @@ class FileParserGUI:
         self.root = root
         self.root.title("Bill Hunter")
         
-        # Detect if running inside HelloToolbelt and get shared credentials
         self.in_hellotoolbelt = self._detect_hellotoolbelt_mode()
         
         self.is_in_toolbelt = hasattr(root, '_title') and hasattr(root, 'pack')
@@ -1101,46 +928,36 @@ class FileParserGUI:
         self.root.minsize(1000, 800)
 
         self.client = tk.StringVar()
-        self.billable_status = tk.StringVar(value="Should be billable")  # ADD THIS LINE
+        self.billable_status = tk.StringVar(value="Should be billable")
         self.postgres_data = []
         
-        # Credential initialization - Conditional based on mode
         if self.in_hellotoolbelt:
-            # Running inside HelloToolbelt - use shared credentials
             print("Bill Hunter: Running in HelloToolbelt mode - using shared credentials")
             
-            # Point to HelloToolbelt's shared credential variables
             self.db_host = self.hellotoolbelt_instance.db_host
             self.db_port = self.hellotoolbelt_instance.db_port
             self.db_name = self.hellotoolbelt_instance.db_name
             self.db_user = self.hellotoolbelt_instance.db_user
             self.db_password = self.hellotoolbelt_instance.db_password
             
-            # Use HelloToolbelt's keyring availability
             self.keyring_available = self.hellotoolbelt_instance.keyring_available
             
-            # Check for boto3
             try:
                 import boto3
                 self.boto3_available = True
             except ImportError:
                 self.boto3_available = False
             
-            # No need to load config - already loaded by HelloToolbelt
-            self.config_file = None  # Not used in HelloToolbelt mode
+            self.config_file = None
             
         else:
-            # Running standalone - use local credentials
-            print("Bill Hunter: Running in standalone mode - using local credentials")
             
-            # Database configuration
             self.db_host = tk.StringVar(value="localhost")
             self.db_port = tk.StringVar(value="5432")
             self.db_name = tk.StringVar(value="")
             self.db_user = tk.StringVar(value="")
             self.db_password = tk.StringVar(value="")
             
-            # Check for boto3 and keyring availability
             try:
                 import boto3
                 self.boto3_available = True
@@ -1153,7 +970,6 @@ class FileParserGUI:
             except ImportError:
                 self.keyring_available = False
             
-            # Config file for database settings
             self.config_file = os.path.join(os.path.expanduser("~"), ".bill_hunter_config.json")
             self.load_db_config()
 
@@ -1173,25 +989,7 @@ class FileParserGUI:
         self.db_connection = None
         self.db_cursor = None
         self.selected_s3_file = None
-        self.polling_active = False  # Track if any polling/background operations are active
-        
-        # Check for boto3 and keyring availability (only if standalone)
-        if not self.in_hellotoolbelt:
-            try:
-                import boto3
-                self.boto3_available = True
-            except ImportError:
-                self.boto3_available = False
-            
-            try:
-                import keyring
-                self.keyring_available = True
-            except ImportError:
-                self.keyring_available = False
-            
-            # Config file for database settings
-            self.config_file = os.path.join(os.path.expanduser("~"), ".bill_hunter_config.json")
-            self.load_db_config()
+        self.polling_active = False
         
         self._init_date_formats() 
 
@@ -1348,10 +1146,8 @@ class FileParserGUI:
             self.text_secondary = '#34495e'
             self.button_text_color = '#000000'
         
-        # Configure ttk styles
         style = ttk.Style()
         
-        # Get colors for styling
         colors = {
             'bg': self.bg_color,
             'fg': self.text_color,
@@ -1359,25 +1155,19 @@ class FileParserGUI:
             'primary': self.primary_color
         }
         
-        # Configure frame styles
         style.configure('Tool.TFrame',
                        background=colors['bg'],
                        relief='flat',
                        borderwidth=0)
 
     def refresh_styling(self, is_dark_mode):
-        """Refresh styling when dark mode is toggled from HelloToolbelt"""
         self.is_dark_mode = is_dark_mode
         
-        # IMPORTANT: Update styling BEFORE rebuilding the interface
-        # This ensures the new colors are calculated and available
         self.setup_adaptive_styling()
         
-        # Clear and recreate the interface
         for widget in self.root.winfo_children():
             widget.destroy()
         
-        # Reinitialize the interface with the updated colors
         self.build_gui()
 
     def _center_window(self):
@@ -1392,59 +1182,35 @@ class FileParserGUI:
         self.root.geometry(f'{window_width}x{window_height}+{center_x}+{center_y}')
 
     def _detect_hellotoolbelt_mode(self):
-        """Detect if we're running inside HelloToolbelt and get shared credentials"""
         try:
-            print(f"Bill Hunter: Detecting HelloToolbelt mode...")
-            print(f"Bill Hunter: self.root type = {type(self.root)}")
-            print(f"Bill Hunter: self.root has db_host = {hasattr(self.root, 'db_host')}")
-            print(f"Bill Hunter: self.root has db_password = {hasattr(self.root, 'db_password')}")
-            print(f"Bill Hunter: self.root has aws_access_key = {hasattr(self.root, 'aws_access_key')}")
-            
-            # Walk up the widget hierarchy looking for HelloToolbelt instance
             current = self.root
-            depth = 0
             while current:
-                print(f"Bill Hunter: Checking depth {depth}, type = {type(current)}")
-                
-                # Check if this parent has the shared credential attributes
                 if (hasattr(current, 'db_host') and 
                     hasattr(current, 'db_password') and
                     hasattr(current, 'aws_access_key') and
                     isinstance(getattr(current, 'db_host', None), tk.Variable)):
-                    # Found HelloToolbelt! Store reference
-                    print(f"Bill Hunter: Found HelloToolbelt at depth {depth}!")
                     self.hellotoolbelt_instance = current
                     return True
                 
                 try:
                     current = current.master
-                    depth += 1
                 except:
                     break
             
-            print(f"Bill Hunter: HelloToolbelt not found after checking {depth} levels")
             return False
-        except Exception as e:
-            print(f"Error detecting HelloToolbelt mode: {e}")
-            import traceback
-            traceback.print_exc()
+        except Exception:
             return False
 
     def build_gui(self):
-        # Create BillHunter content directly in root (no notebook wrapper)
         self.billhunter_tab = ttk.Frame(self.root, style='Tool.TFrame')
         self.billhunter_tab.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
         
-        # Build the interface
         self._build_billhunter_tab()
     
     def _build_billhunter_tab(self):
-        """Build the main BillHunter functionality tab"""
-        # Main container with padding (non-scrollable)
         main_container = ttk.Frame(self.billhunter_tab, style='Tool.TFrame')
         main_container.pack(fill=tk.BOTH, expand=True, padx=20, pady=15)
         
-        # Header (stays fixed at top)
         header_frame = tk.Frame(main_container, bg=self.primary_color, relief='flat', bd=0)
         header_frame.pack(fill=tk.X, pady=(0, 20))
         
@@ -1458,23 +1224,18 @@ class FileParserGUI:
                             font=('Segoe UI', 16, 'bold'), bg=self.primary_color, fg='white')
         header_label.pack(side=tk.LEFT, anchor='w')
         
-        # Create scrollable container for content (scrolls independently)
         self.scrollable_container = ScrollableFrame(main_container, bg_color=self.bg_color, bg=self.bg_color)
         self.scrollable_container.pack(fill=tk.BOTH, expand=True)
         
         content_container = self.scrollable_container.scrollable_frame
         content_container.configure(bg=self.bg_color)
         
-        # NEW: S3 File Browser Section (FIRST - at the top)
         self._build_s3_browser_section(content_container)
         
-        # Configuration Section (Find Users That, Client, Columns)
         self._build_configuration_section(content_container)
         
-        # Actions Section
         self._build_actions_section(content_container)
         
-        # Results Section
         self._build_results_section(content_container)
         
         def update_scroll_after_build():
@@ -1485,25 +1246,20 @@ class FileParserGUI:
                 pass
         
         self.root.after(100, update_scroll_after_build)
-        self.root.after(500, update_scroll_after_build)
     
     def _build_s3_browser_section(self, parent):
-        """Build the S3 file browser section"""
         s3_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         s3_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 15))
         
-        # Track if S3 section is expanded
         self.s3_section_expanded = tk.BooleanVar(value=False)
-        self.s3_loaded = False  # Track if data has been loaded
+        self.s3_loaded = False
         
-        # Collapsible header
         s3_header = tk.Frame(s3_frame, bg=self.header_bg, cursor="hand2")
         s3_header.pack(fill=tk.X)
         
         s3_header_content = tk.Frame(s3_header, bg=self.header_bg)
         s3_header_content.pack(fill=tk.X, pady=15, padx=20)
         
-        # Expand/collapse icon
         self.s3_expand_icon = tk.Label(s3_header_content, text="▶", 
                                        font=('Segoe UI', 12), bg=self.header_bg, fg=self.text_color)
         self.s3_expand_icon.pack(side=tk.LEFT, padx=(0, 10))
@@ -1512,35 +1268,29 @@ class FileParserGUI:
                            font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
         s3_label.pack(side=tk.LEFT, anchor='w')
         
-        # Make header clickable
         s3_header.bind('<Button-1>', lambda e: self.toggle_s3_section())
         s3_header_content.bind('<Button-1>', lambda e: self.toggle_s3_section())
         self.s3_expand_icon.bind('<Button-1>', lambda e: self.toggle_s3_section())
         s3_label.bind('<Button-1>', lambda e: self.toggle_s3_section())
         
-        # ALWAYS VISIBLE: Upload button frame (outside collapsible content)
         always_visible_frame = tk.Frame(s3_frame, bg=self.frame_bg)
         always_visible_frame.pack(fill=tk.X, padx=15, pady=(10, 15))
         
-        # Upload Local File button (ALWAYS VISIBLE)
         upload_btn = tk.Button(always_visible_frame, text="📁 Upload Local File", 
                             command=self.upload_file,
                             bg=self.success_color, fg='black',
                             font=('Segoe UI', 10, 'bold'), padx=20, pady=8, 
                             relief='flat', bd=0, cursor="hand2")
         upload_btn.pack(side=tk.LEFT)
-        self._add_button_hover(upload_btn, self.success_color, '#229954', 
+        self._add_button_hover(upload_btn, self.success_color, '#229954',
                             normal_fg='black', hover_fg='black')
         
-        # Info label (ALWAYS VISIBLE)
         self.s3_info_label = tk.Label(always_visible_frame, text="Upload a local file or browse S3 below", 
                                     font=('Segoe UI', 9), bg=self.frame_bg, fg=self.text_secondary)
         self.s3_info_label.pack(side=tk.LEFT, padx=(15, 0))
         
-        # Content frame (collapsible - contains S3 browser)
         self.s3_content_frame = tk.Frame(s3_frame, bg=self.frame_bg)
         
-        # Create the S3 browser widget
         self.s3_browser = S3FileBrowserWidget(
             self.s3_content_frame,
             bucket="s3.hello.do.integration",
@@ -1548,69 +1298,47 @@ class FileParserGUI:
             profile="default",
             on_file_select=self.on_s3_file_selected,
             bg_color=self.bg_color,
-            auto_load=False  # Don't load on init
+            auto_load=False
         )
         self.s3_browser.pack(fill=tk.BOTH, expand=True)
         
-        # S3 Action button frame (inside collapsible content)
         s3_button_frame = tk.Frame(self.s3_content_frame, bg=self.frame_bg)
         s3_button_frame.pack(fill=tk.X, padx=15, pady=(0, 15))
         
-        # Load Selected S3 File button (only visible when expanded)
         load_btn = tk.Button(s3_button_frame, text="📥 Load Selected S3 File", 
                             command=self.load_selected_s3_file,
                             bg=self.primary_color, fg='black',
                             font=('Segoe UI', 10, 'bold'), padx=20, pady=8, 
                             relief='flat', bd=0, cursor="hand2")
         load_btn.pack(side=tk.LEFT)
-        self._add_button_hover(load_btn, self.primary_color, '#2980b9', 
+        self._add_button_hover(load_btn, self.primary_color, '#2980b9',
                             normal_fg='black', hover_fg='black')
         
-        # S3 status label
         self.s3_status_label = tk.Label(s3_button_frame, text="Select a file from S3 above", 
                                     font=('Segoe UI', 9), bg=self.frame_bg, fg=self.text_secondary)
         self.s3_status_label.pack(side=tk.LEFT, padx=(15, 0))
 
     def toggle_s3_section(self):
-        """Toggle the S3 browser section visibility"""
         if self.s3_section_expanded.get():
-            # Collapse
             self.s3_content_frame.pack_forget()
             self.s3_expand_icon.config(text="▶")
             self.s3_section_expanded.set(False)
             
-            # Pause any background polling/operations when collapsed
             self.polling_active = False
             
-            # If there's a database connection, you could optionally close it here
-            # to save resources (uncomment if needed):
-            # if self.db_connection:
-            #     try:
-            #         if self.db_cursor:
-            #             self.db_cursor.close()
-            #         self.db_connection.close()
-            #         print("Database connection closed while S3 section minimized")
-            #     except Exception as e:
-            #         print(f"Error closing connection: {e}")
-            #     self.db_connection = None
-            #     self.db_cursor = None
         else:
-            # Expand
             self.s3_content_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 0))
             self.s3_expand_icon.config(text="▼")
             self.s3_section_expanded.set(True)
             
-            # Resume background operations when expanded
             self.polling_active = True
             
-            # Load data on first expand
             if not self.s3_loaded:
                 self.s3_browser.load_folder(self.s3_browser.current_prefix)
                 self.s3_loaded = True
 
 
     def on_s3_file_selected(self, s3_key):
-        """Callback when a file is selected in the S3 browser"""
         self.selected_s3_file = s3_key
         self.s3_status_label.config(
             text=f"Selected: {s3_key.split('/')[-1]}",
@@ -1618,7 +1346,6 @@ class FileParserGUI:
         )
 
     def load_selected_s3_file(self):
-        """Load the currently selected S3 file using boto3"""
         if not BOTO3_AVAILABLE:
             messagebox.showerror("boto3 Not Available", 
                                "boto3 library is required. Install with: pip install boto3")
@@ -1634,14 +1361,12 @@ class FileParserGUI:
         bucket = "s3.hello.do.integration"
         profile = "default"
         
-        # Show progress
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Downloading from S3")
         progress_window.geometry("500x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
-        # Center
         progress_window.update_idletasks()
         x = (progress_window.winfo_screenwidth() // 2) - 250
         y = (progress_window.winfo_screenheight() // 2) - 90
@@ -1662,11 +1387,9 @@ class FileParserGUI:
         progress_window.update()
         
         def do_load():
-            """Perform load in background thread"""
             try:
                 import tempfile
                 
-                # Create S3 client with profile
                 session_kwargs = {}
                 if profile and profile != "default":
                     session_kwargs['profile_name'] = profile
@@ -1674,19 +1397,16 @@ class FileParserGUI:
                 session = boto3.Session(**session_kwargs)
                 s3_client = session.client('s3')
                 
-                # Create temp file
                 temp_dir = tempfile.gettempdir()
                 filename = s3_key.split('/')[-1]
                 local_path = os.path.join(temp_dir, filename)
                 
-                # Download file
                 s3_client.download_file(bucket, s3_key, local_path)
                 
                 progress.stop()
                 progress_window.destroy()
                 
                 try:
-                    # Process the file
                     self.detected_delimiter = self.detect_delimiter(local_path)
                     
                     with open(local_path, 'r', encoding='utf-8') as f:
@@ -1700,11 +1420,9 @@ class FileParserGUI:
                     self.headers = rows[0]
                     self.data = rows[1:]
                     
-                    # Log S3 file access to audit trail
                     if hasattr(self.root, 'log_file_access'):
                         self.root.log_file_access(f"s3://{bucket}/{s3_key}", "LOADED_FROM_S3")
                     
-                    # Update column options
                     column_options = [f"{idx}: {header}" for idx, header in enumerate(self.headers)]
                     
                     self.first_name_combo['values'] = column_options
@@ -1712,7 +1430,6 @@ class FileParserGUI:
                     self.termination_date_combo['values'] = column_options
                     self.date_of_birth_combo['values'] = column_options
                     
-                    # Auto-detect columns
                     detected_first, detected_last, detected_term, detected_dob = self.auto_detect_name_columns()
                     
                     if detected_first:
@@ -1731,14 +1448,12 @@ class FileParserGUI:
                     if detected_dob:
                         self.date_of_birth_col.set(detected_dob)
                     
-                    # Update info label
                     delimiter_name = {'|': 'Pipe (|)', ',': 'Comma (,)', '\t': 'Tab (\\t)'}
                     self.s3_info_label.config(
                         text=f"✓ Loaded: {filename} | Rows: {len(self.data)} | Columns: {len(self.headers)}",
                         fg=self.success_color
                     )
                     
-                    # Display data
                     self.display_data()
                     
                     messagebox.showinfo("Success", 
@@ -1748,7 +1463,6 @@ class FileParserGUI:
                                     f"Columns: {len(self.headers)}")
                 
                 finally:
-                    # Clean up: Delete temporary file after processing
                     try:
                         if os.path.exists(local_path):
                             os.remove(local_path)
@@ -1773,7 +1487,6 @@ class FileParserGUI:
                 messagebox.showerror("Error",
                                    f"Failed to load file:\n{str(e)}")
         
-        # Run load in thread to keep UI responsive
         import threading
         load_thread = threading.Thread(target=do_load, daemon=True)
         load_thread.start()
@@ -1794,13 +1507,11 @@ class FileParserGUI:
         upload_content.pack(fill=tk.X, padx=20, pady=20)
         
 
-        # AWS Credentials section
         cred_frame = tk.LabelFrame(upload_content, text="AWS Credentials (for S3 Access)", 
                                   font=('Segoe UI', 9, 'bold'), bg=self.frame_bg, 
                                   fg=self.text_color, padx=10, pady=10)
         cred_frame.pack(fill=tk.X, pady=(10, 5))
         
-        # Access Key ID
         access_key_frame = tk.Frame(cred_frame, bg=self.frame_bg)
         access_key_frame.pack(fill=tk.X, pady=(0, 8))
         
@@ -1809,7 +1520,6 @@ class FileParserGUI:
         self.aws_access_key_entry = tk.Entry(access_key_frame, font=self.text_font, width=35, show="*")
         self.aws_access_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
         
-        # Secret Access Key
         secret_key_frame = tk.Frame(cred_frame, bg=self.frame_bg)
         secret_key_frame.pack(fill=tk.X, pady=(0, 8))
         
@@ -1818,7 +1528,6 @@ class FileParserGUI:
         self.aws_secret_key_entry = tk.Entry(secret_key_frame, font=self.text_font, width=35, show="*")
         self.aws_secret_key_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
         
-        # Region
         region_frame = tk.Frame(cred_frame, bg=self.frame_bg)
         region_frame.pack(fill=tk.X, pady=(0, 10))
         
@@ -1828,11 +1537,9 @@ class FileParserGUI:
         self.aws_region_entry.insert(0, "us-east-1")
         self.aws_region_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
         
-        # Buttons frame
         cred_buttons_frame = tk.Frame(cred_frame, bg=self.frame_bg)
         cred_buttons_frame.pack(fill=tk.X, pady=(5, 0))
         
-        # Save credentials button
         save_creds_btn = tk.Button(cred_buttons_frame, text="💾 Save Credentials", 
                                    command=self.save_aws_credentials,
                                    bg='#3498db', fg='black',
@@ -1840,7 +1547,6 @@ class FileParserGUI:
         save_creds_btn.pack(side=tk.LEFT, padx=(0, 5))
         self._add_button_hover(save_creds_btn, '#3498db', '#2980b9', normal_fg='black', hover_fg='black')
         
-        # Test connection button
         test_creds_btn = tk.Button(cred_buttons_frame, text="🔌 Test Connection", 
                                    command=self.test_aws_connection,
                                    bg='#27ae60', fg='black',
@@ -1848,7 +1554,6 @@ class FileParserGUI:
         test_creds_btn.pack(side=tk.LEFT, padx=(0, 5))
         self._add_button_hover(test_creds_btn, '#27ae60', '#229954', normal_fg='black', hover_fg='black')
         
-        # Clear credentials button
         clear_creds_btn = tk.Button(cred_buttons_frame, text="🗑️ Clear", 
                                     command=self.clear_aws_credentials,
                                     bg='#e74c3c', fg='black',
@@ -1856,14 +1561,12 @@ class FileParserGUI:
         clear_creds_btn.pack(side=tk.LEFT)
         self._add_button_hover(clear_creds_btn, '#e74c3c', '#c0392b', normal_fg='black', hover_fg='black')
         
-        # Status label
         self.cred_status_label = tk.Label(cred_frame, text="💡 Credentials stored securely in system keychain", 
                                          font=('Segoe UI', 8), bg=self.frame_bg, fg=self.text_secondary,
                                          wraplength=500, justify=tk.LEFT)
         self.cred_status_label.pack(fill=tk.X, pady=(10, 0))
         
 
-        # File status label
         self.info_label = tk.Label(upload_content, text="No file loaded", 
                                    font=self.label_font, bg=self.frame_bg, fg=self.text_secondary)
         self.info_label.pack(pady=(10, 0))
@@ -1872,16 +1575,13 @@ class FileParserGUI:
         db_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
         db_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # Create a variable to track if section is expanded
         if not hasattr(self, 'db_section_expanded'):
             self.db_section_expanded = tk.BooleanVar(value=always_expanded)
         
         if not always_expanded:
-            # Collapsible header
             db_header = tk.Frame(db_frame, bg=self.header_bg, cursor="hand2")
             db_header.pack(fill=tk.X)
             
-            # Make header clickable
             db_header_content = tk.Frame(db_header, bg=self.header_bg)
             db_header_content.pack(fill=tk.X, pady=15, padx=20)
             
@@ -1893,7 +1593,6 @@ class FileParserGUI:
                                font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
             db_label.pack(side=tk.LEFT, anchor='w')
         else:
-            # Fixed header for Configuration tab
             db_header = tk.Frame(db_frame, bg=self.header_bg)
             db_header.pack(fill=tk.X)
             
@@ -1904,7 +1603,6 @@ class FileParserGUI:
                                font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
             db_label.pack(side=tk.LEFT, anchor='w')
         
-        # Content frame that will be shown/hidden (or always shown in config tab)
         self.db_content = tk.Frame(db_frame, bg=self.frame_bg)
         
         if not PSYCOPG2_AVAILABLE:
@@ -1918,11 +1616,9 @@ class FileParserGUI:
                              font=self.label_font, bg=self.frame_bg, fg=self.text_secondary, wraplength=600)
         info_label.pack(pady=(10, 10), padx=20)
         
-        # Grid layout for database fields
         db_grid = tk.Frame(self.db_content, bg=self.frame_bg)
         db_grid.pack(fill=tk.X, padx=20, pady=(0, 10))
         
-        # Row 0: Host and Port
         tk.Label(db_grid, text="Host:", font=self.label_font,
                 bg=self.frame_bg, fg=self.text_color).grid(row=0, column=0, sticky="w", pady=(0, 5))
         host_entry = tk.Entry(db_grid, textvariable=self.db_host, font=self.text_font, width=40)
@@ -1933,13 +1629,11 @@ class FileParserGUI:
         port_entry = tk.Entry(db_grid, textvariable=self.db_port, font=self.text_font, width=10)
         port_entry.grid(row=0, column=3, sticky="ew", padx=(5, 0), pady=(0, 5))
         
-        # Row 1: Database Name
         tk.Label(db_grid, text="Database:", font=self.label_font,
                 bg=self.frame_bg, fg=self.text_color).grid(row=1, column=0, sticky="w", pady=(0, 5))
         db_entry = tk.Entry(db_grid, textvariable=self.db_name, font=self.text_font, width=40)
         db_entry.grid(row=1, column=1, columnspan=3, sticky="ew", padx=(5, 0), pady=(0, 5))
         
-        # Row 2: Username and Password
         tk.Label(db_grid, text="Username:", font=self.label_font,
                 bg=self.frame_bg, fg=self.text_color).grid(row=2, column=0, sticky="w", pady=(0, 5))
         user_entry = tk.Entry(db_grid, textvariable=self.db_user, font=self.text_font, width=40)
@@ -1954,44 +1648,36 @@ class FileParserGUI:
         db_grid.columnconfigure(1, weight=2)
         db_grid.columnconfigure(3, weight=1)
         
-        # Button frame for Save and Test buttons
         button_frame = tk.Frame(self.db_content, bg=self.frame_bg)
         button_frame.pack(pady=(5, 15))
         
-        # Save button
         save_btn = tk.Button(button_frame, text="💾 Save Configuration", 
                             command=self.save_db_config, bg=self.success_color, fg=self.button_text_color,
                             font=('Segoe UI', 9), padx=15, pady=5, relief='flat', bd=0, cursor="hand2")
         save_btn.pack(side=tk.LEFT, padx=(0, 10))
         self._add_button_hover(save_btn, self.success_color, '#229954')
         
-        # Test Connection button
         test_btn = tk.Button(button_frame, text="🔌 Test Connection", 
                             command=self.test_db_connection, bg='#2196F3', fg=self.button_text_color,
                             font=('Segoe UI', 9), padx=15, pady=5, relief='flat', bd=0, cursor="hand2")
         test_btn.pack(side=tk.LEFT)
         self._add_button_hover(test_btn, '#2196F3', '#1976D2')
         
-        # Bind click events to header for expand/collapse (only if not always_expanded)
         if not always_expanded:
             db_header.bind("<Button-1>", lambda e: self.toggle_db_section())
             db_header_content.bind("<Button-1>", lambda e: self.toggle_db_section())
             self.db_expand_icon.bind("<Button-1>", lambda e: self.toggle_db_section())
             db_label.bind("<Button-1>", lambda e: self.toggle_db_section())
         else:
-            # Always show content in Configuration tab
             self.db_content.pack(fill=tk.X, padx=20, pady=20)
             self.db_section_expanded.set(True)
     
     def toggle_db_section(self):
-        """Toggle the database configuration section"""
         if self.db_section_expanded.get():
-            # Collapse
             self.db_content.pack_forget()
             self.db_expand_icon.config(text="▶")
             self.db_section_expanded.set(False)
         else:
-            # Expand
             self.db_content.pack(fill=tk.X, padx=20, pady=20)
             self.db_expand_icon.config(text="▼")
             self.db_section_expanded.set(True)
@@ -2010,7 +1696,6 @@ class FileParserGUI:
         config_content = tk.Frame(config_frame, bg=self.frame_bg)
         config_content.pack(fill=tk.X, padx=20, pady=20)
         
-        # Billable Status dropdown (first)
         billable_frame = tk.Frame(config_content, bg=self.frame_bg)
         billable_frame.pack(fill=tk.X, pady=(0, 15))
 
@@ -2021,7 +1706,6 @@ class FileParserGUI:
                                         state="readonly", width=40, font=self.text_font)
         self.billable_combo.pack(fill=tk.X)
 
-        # Client selection
         client_frame = tk.Frame(config_content, bg=self.frame_bg)
         client_frame.pack(fill=tk.X, pady=(0, 15))
         
@@ -2031,14 +1715,11 @@ class FileParserGUI:
                                         values=self.clients_list, width=40, font=self.text_font)
         self.client_combo.pack(fill=tk.X)
         
-        # Add search functionality to client combobox
         self.client_combo.bind('<KeyRelease>', self._on_client_keyrelease)
         
-        # Column dropdowns in grid
         dropdowns_frame = tk.Frame(config_content, bg=self.frame_bg)
         dropdowns_frame.pack(fill=tk.X, pady=(0, 15))
         
-        # First Name
         first_name_frame = tk.Frame(dropdowns_frame, bg=self.frame_bg)
         first_name_frame.grid(row=0, column=0, padx=(0, 10), pady=5, sticky="ew")
         
@@ -2048,7 +1729,6 @@ class FileParserGUI:
                                             state="readonly", width=25, font=self.text_font)
         self.first_name_combo.pack(fill=tk.X)
         
-        # Last Name
         last_name_frame = tk.Frame(dropdowns_frame, bg=self.frame_bg)
         last_name_frame.grid(row=0, column=1, padx=10, pady=5, sticky="ew")
         
@@ -2058,7 +1738,6 @@ class FileParserGUI:
                                            state="readonly", width=25, font=self.text_font)
         self.last_name_combo.pack(fill=tk.X)
         
-        # Termination Date
         term_date_frame = tk.Frame(dropdowns_frame, bg=self.frame_bg)
         term_date_frame.grid(row=1, column=0, padx=(0, 10), pady=5, sticky="ew")
         
@@ -2068,7 +1747,6 @@ class FileParserGUI:
                                                    state="readonly", width=25, font=self.text_font)
         self.termination_date_combo.pack(fill=tk.X)
         
-        # Date of Birth
         dob_frame = tk.Frame(dropdowns_frame, bg=self.frame_bg)
         dob_frame.grid(row=1, column=1, padx=10, pady=5, sticky="ew")
         
@@ -2115,11 +1793,9 @@ class FileParserGUI:
                             font=('Segoe UI', 10), padx=15, pady=6, relief='flat', bd=0, cursor="hand2")
         paste_btn.pack(side=tk.LEFT, padx=5)
         
-        # Add a separator between Paste PG Results and Run Query
         separator = tk.Frame(buttons_frame, width=2, bg='#d0d0d0', relief='sunken', bd=1)
         separator.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=2)
         
-        # Create a container frame for run/stop buttons to maintain position
         run_stop_frame = tk.Frame(buttons_frame, bg=self.frame_bg)
         run_stop_frame.pack(side=tk.LEFT, padx=5)
         
@@ -2128,11 +1804,9 @@ class FileParserGUI:
                             font=('Segoe UI', 10), padx=15, pady=6, relief='flat', bd=0, cursor="hand2")
         self.run_query_btn.pack()
         
-        # Stop button (initially hidden, in same container)
         self.stop_query_btn = tk.Button(run_stop_frame, text="⏹ Stop Query", 
                             command=self.stop_query, bg='#c0392b', fg='black',
                             font=('Segoe UI', 10), padx=15, pady=6, relief='flat', bd=0, cursor="hand2")
-        # Don't pack it initially - it will be shown during query execution
         
         match_btn = tk.Button(buttons_frame, text="Match Results", 
                             command=self.match_results, bg='#16a085', fg='black',
@@ -2159,7 +1833,6 @@ class FileParserGUI:
                             bg=self.header_bg, fg=self.text_color)
         results_label.pack(side=tk.LEFT)
         
-        # Search frame
         search_frame = tk.Frame(header_content, bg=self.header_bg)
         search_frame.pack(side=tk.LEFT, padx=20)
         
@@ -2204,11 +1877,9 @@ class FileParserGUI:
         h_scrollbar.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(fill=tk.BOTH, expand=True)
         
-        # Track sort state for each column
-        self.sort_reverse = {}  # Dictionary to track sort direction for each column
+        self.sort_reverse = {}
         self.current_sort_column = None
         
-        self.tree.bind('<Button-1>', self.on_tree_click)
         self.tree.bind('<Control-c>', self.copy_selected_rows)
         self.tree.bind('<Command-c>', self.copy_selected_rows)
 
@@ -2239,32 +1910,23 @@ class FileParserGUI:
             pass
     
     def _on_client_keyrelease(self, event):
-        """Filter client dropdown based on typed text"""
         try:
-            # Get the current text in the combobox
             typed_text = self.client_combo.get().lower()
             
-            # If backspace or delete was pressed, or text is empty, show all clients
             if event.keysym in ('BackSpace', 'Delete') or not typed_text:
                 self.client_combo['values'] = self.clients_list
                 return
             
-            # Filter clients that contain the typed text
             filtered_clients = [client for client in self.clients_list 
                               if typed_text in client.lower()]
             
-            # Update the combobox values
             self.client_combo['values'] = filtered_clients
             
-            # If there are matches, open the dropdown
             if filtered_clients:
                 self.client_combo.event_generate('<Down>')
         except Exception:
             pass
 
-    def on_tree_click(self, event):
-        pass
-    
     def copy_selected_rows(self, event=None):
         selected_items = self.tree.selection()
         
@@ -2347,7 +2009,6 @@ class FileParserGUI:
             self.headers = rows[0]
             self.data = rows[1:]
             
-            # Log file access to audit trail
             if hasattr(self.root, 'log_file_access'):
                 self.root.log_file_access(file_path, "LOADED_FILE")
             
@@ -2389,7 +2050,6 @@ class FileParserGUI:
             messagebox.showerror("Error", f"Failed to read file:\n{str(e)}")
     
     def download_from_s3(self):
-        """Download a file from AWS S3 using boto3"""
         if not BOTO3_AVAILABLE:
             messagebox.showerror("boto3 Not Available", 
                                "boto3 library is required. Install with: pip install boto3")
@@ -2407,14 +2067,12 @@ class FileParserGUI:
             messagebox.showwarning("Missing Information", "Please enter an S3 key/path.")
             return
         
-        # Create progress window
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Downloading from S3")
         progress_window.geometry("500x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
-        # Center the window
         progress_window.update_idletasks()
         x = (progress_window.winfo_screenwidth() // 2) - (500 // 2)
         y = (progress_window.winfo_screenheight() // 2) - (180 // 2)
@@ -2435,11 +2093,9 @@ class FileParserGUI:
         progress_window.update()
         
         def do_download():
-            """Perform download in background thread"""
             try:
                 import tempfile
                 
-                # Create S3 client with profile
                 session_kwargs = {}
                 if profile and profile != "default":
                     session_kwargs['profile_name'] = profile
@@ -2447,18 +2103,15 @@ class FileParserGUI:
                 session = boto3.Session(**session_kwargs)
                 s3_client = session.client('s3')
                 
-                # Create temporary file
                 temp_dir = tempfile.gettempdir()
                 filename = os.path.basename(key) if '/' in key else key
                 local_path = os.path.join(temp_dir, filename)
                 
-                # Download file
                 s3_client.download_file(bucket, key, local_path)
                 
                 progress.stop()
                 progress_window.destroy()
                 
-                # Process the downloaded file
                 try:
                     self.detected_delimiter = self.detect_delimiter(local_path)
                     
@@ -2473,7 +2126,6 @@ class FileParserGUI:
                     self.headers = rows[0]
                     self.data = rows[1:]
                     
-                    # Log S3 file access to audit trail
                     if hasattr(self.root, 'log_file_access'):
                         self.root.log_file_access(f"s3://{bucket}/{key}", "DOWNLOADED_FROM_S3")
                     
@@ -2569,19 +2221,15 @@ class FileParserGUI:
                 progress_window.destroy()
                 messagebox.showerror("Error", f"Unexpected error:\n{str(e)}")
         
-        # Run download in thread to keep UI responsive
         import threading
         download_thread = threading.Thread(target=do_download, daemon=True)
         download_thread.start()
 
     def save_aws_credentials(self):
-        """Save AWS credentials to system keychain"""
-        # Delegate to HelloToolbelt if in integrated mode
         if self.in_hellotoolbelt:
             self.hellotoolbelt_instance.save_aws_credentials()
             return
         
-        # Original standalone save logic
         access_key = self.aws_access_key_entry.get().strip()
         secret_key = self.aws_secret_key_entry.get().strip()
         region = self.aws_region_entry.get().strip() or "us-east-1"
@@ -2615,12 +2263,9 @@ class FileParserGUI:
             )
     
     def load_aws_credentials(self):
-        """Load AWS credentials from system keychain"""
-        # Skip if in HelloToolbelt mode - credentials already loaded
         if self.in_hellotoolbelt:
             return
         
-        # Original standalone load logic
         if not self.keyring_available:
             return
         
@@ -2648,28 +2293,23 @@ class FileParserGUI:
                     fg=self.success_color
                 )
         except Exception as e:
-            pass  # Silently fail if no credentials
+            pass
     
     def clear_aws_credentials(self):
-        """Clear AWS credentials from both UI and keychain"""
-        # Delegate to HelloToolbelt if in integrated mode
         if self.in_hellotoolbelt:
             self.hellotoolbelt_instance.clear_aws_credentials()
             return
         
-        # Original standalone clear logic
         response = messagebox.askyesno("Clear Credentials", 
                                       "Are you sure you want to clear all AWS credentials?")
         if not response:
             return
         
-        # Clear UI fields
         self.aws_access_key_entry.delete(0, tk.END)
         self.aws_secret_key_entry.delete(0, tk.END)
         self.aws_region_entry.delete(0, tk.END)
         self.aws_region_entry.insert(0, "us-east-1")
         
-        # Clear from keychain
         if self.keyring_available:
             try:
                 import keyring
@@ -2677,7 +2317,7 @@ class FileParserGUI:
                 keyring.delete_password("BillHunter", "aws_secret_access_key")
                 keyring.delete_password("BillHunter", "aws_region")
             except:
-                pass  # Ignore errors if credentials don't exist
+                pass
         
         self.cred_status_label.config(
             text="🗑️ Credentials cleared",
@@ -2686,8 +2326,6 @@ class FileParserGUI:
         messagebox.showinfo("Cleared", "AWS credentials have been cleared!")
     
     def test_aws_connection(self):
-        """Test AWS connection with entered credentials"""
-        # Get credentials from appropriate source
         if self.in_hellotoolbelt:
             access_key = self.hellotoolbelt_instance.aws_access_key.get().strip()
             secret_key = self.hellotoolbelt_instance.aws_secret_key.get().strip()
@@ -2708,7 +2346,6 @@ class FileParserGUI:
                                "pip install boto3")
             return
         
-        # Create progress window
         test_window = tk.Toplevel(self.root)
         test_window.title("Testing AWS Connection")
         test_window.geometry("400x150")
@@ -2730,7 +2367,6 @@ class FileParserGUI:
                 import boto3
                 from botocore.exceptions import ClientError, NoCredentialsError
                 
-                # Create S3 client with credentials
                 s3_client = boto3.client(
                     's3',
                     aws_access_key_id=access_key,
@@ -2738,7 +2374,6 @@ class FileParserGUI:
                     region_name=region
                 )
                 
-                # Try to list buckets
                 status_label.config(text="Listing S3 buckets...")
                 test_window.update()
                 
@@ -2748,7 +2383,6 @@ class FileParserGUI:
                 progress.stop()
                 test_window.destroy()
                 
-                # Success!
                 self.cred_status_label.config(
                     text=f"✅ Connection successful! Found {bucket_count} bucket(s)",
                     fg=self.success_color
@@ -2813,7 +2447,6 @@ class FileParserGUI:
                 messagebox.showerror("Connection Error", 
                                    f"Failed to connect to AWS:\n\n{str(e)}")
         
-        # Run test in thread
         import threading
         test_thread = threading.Thread(target=test_connection, daemon=True)
         test_thread.start()
@@ -2824,7 +2457,6 @@ class FileParserGUI:
         return selection
     
     def _init_date_formats(self):
-        """Initialize date format patterns for DOB normalization"""
         self.date_formats = {
             "yyyyMMdd": {
                 "regex": r"^([0-9]{4})(0[1-9]|1[0-2])(0[1-9]|[1-2][0-9]|3[0-1])$",
@@ -2849,7 +2481,6 @@ class FileParserGUI:
         }
     
     def load_db_config(self):
-        """Load database configuration from file"""
         try:
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
@@ -2858,25 +2489,20 @@ class FileParserGUI:
                     self.db_port.set(config.get('port', '5432'))
                     self.db_name.set(config.get('database', ''))
                     self.db_user.set(config.get('username', ''))
-                    # Note: Password is not saved for security reasons
         except Exception:
-            pass  # If config file is corrupted or doesn't exist, use defaults
+            pass
     
     def save_db_config(self):
-        """Save database configuration to file"""
-        # Delegate to HelloToolbelt if in integrated mode
         if self.in_hellotoolbelt:
             self.hellotoolbelt_instance.save_db_config()
             return
         
-        # Original standalone save logic
         try:
             config = {
                 'host': self.db_host.get(),
                 'port': self.db_port.get(),
                 'database': self.db_name.get(),
                 'username': self.db_user.get()
-                # Note: Password is not saved for security reasons
             }
             with open(self.config_file, 'w') as f:
                 json.dump(config, f, indent=2)
@@ -2885,13 +2511,10 @@ class FileParserGUI:
             messagebox.showerror("Error", f"Could not save config:\n{str(e)}")
     
     def test_db_connection(self):
-        """Test the PostgreSQL database connection"""
-        # Delegate to HelloToolbelt if in integrated mode
         if self.in_hellotoolbelt:
             self.hellotoolbelt_instance.test_db_connection()
             return
         
-        # Original test logic continues...
         if not PSYCOPG2_AVAILABLE:
             messagebox.showerror("Error", 
                                "psycopg2 is not installed.\n\n"
@@ -2899,14 +2522,12 @@ class FileParserGUI:
                                "pip install psycopg2-binary")
             return
         
-        # Get current values
         host = self.db_host.get().strip()
         port = self.db_port.get().strip()
         database = self.db_name.get().strip()
         user = self.db_user.get().strip()
         password = self.db_password.get().strip()
         
-        # Validate required fields
         if not all([host, database, user]):
             messagebox.showwarning("Missing Information", 
                                  "Please fill in at least:\n"
@@ -2915,18 +2536,15 @@ class FileParserGUI:
                                  "• Username")
             return
         
-        # Use default port if not specified
         if not port:
             port = "5432"
         
-        # Show progress dialog
         test_window = tk.Toplevel(self.root)
         test_window.title("Testing Connection")
         test_window.geometry("400x150")
         test_window.transient(self.root)
         test_window.grab_set()
         
-        # Center the window
         test_window.update_idletasks()
         x = (test_window.winfo_screenwidth() // 2) - (400 // 2)
         y = (test_window.winfo_screenheight() // 2) - (150 // 2)
@@ -2942,7 +2560,6 @@ class FileParserGUI:
         
         test_window.update()
         
-        # Try to connect
         try:
             conn = psycopg2.connect(
                 host=host,
@@ -2953,7 +2570,6 @@ class FileParserGUI:
                 connect_timeout=10
             )
             
-            # Test a simple query
             cursor = conn.cursor()
             cursor.execute("SELECT version();")
             version = cursor.fetchone()[0]
@@ -2963,8 +2579,7 @@ class FileParserGUI:
             progress.stop()
             test_window.destroy()
             
-            # Show success message with PostgreSQL version
-            version_short = version.split('\n')[0][:80]  # First line, max 80 chars
+            version_short = version.split('\n')[0][:80]
             messagebox.showinfo("Connection Successful! ✅", 
                               f"Successfully connected to PostgreSQL database!\n\n"
                               f"Host: {host}\n"
@@ -2978,7 +2593,6 @@ class FileParserGUI:
             
             error_msg = str(e)
             
-            # Provide helpful error messages
             if "could not connect" in error_msg.lower() or "connection refused" in error_msg.lower():
                 messagebox.showerror("Connection Failed ❌", 
                                    f"Could not connect to the database server.\n\n"
@@ -3014,7 +2628,6 @@ class FileParserGUI:
                                f"An unexpected error occurred:\n\n{str(e)}")
 
     def normalize_term_date(self, term_date_value):
-        """Convert uploaded termination date into yyyy-MM-dd format."""
         if not term_date_value or str(term_date_value).strip() == '':
             return term_date_value
         
@@ -3032,7 +2645,6 @@ class FileParserGUI:
         return term_date_value
 
     def normalize_dob(self, dob_value):
-        """Convert uploaded DOB into yyyy-MM-dd format."""
         if not dob_value or str(dob_value).strip() == '':
             return dob_value
         
@@ -3073,17 +2685,15 @@ class FileParserGUI:
         dob_normalized_count = 0
         term_normalized_count = 0
         
-        billable_status = self.billable_status.get()  # ADD THIS LINE
+        billable_status = self.billable_status.get()
         client = self.client.get()
         first_col = self.extract_column_name(self.first_name_col.get())
         
-        # ADD THIS VALIDATION:
         if not billable_status:
             messagebox.showwarning("Billable Status Required", 
                                 "Please select a billable status!")
             return
     
-        # Normalize DOB column if selected
         if dob_col != "Not selected" and dob_col in self.headers:
             try:
                 dob_idx = self.headers.index(dob_col)
@@ -3100,7 +2710,6 @@ class FileParserGUI:
                 messagebox.showerror("Error", f"DOB column error:\n{str(e)}")
                 return
         
-        # Normalize termination date column if selected
         if term_col != "Not selected" and term_col in self.headers:
             try:
                 term_idx = self.headers.index(term_col)
@@ -3117,7 +2726,6 @@ class FileParserGUI:
                 messagebox.showerror("Error", f"Termination date column error:\n{str(e)}")
                 return
         
-        # Refresh the display to show normalized dates
         self.display_data()
         
         msg = (f"Client: {client}\n"
@@ -3153,141 +2761,6 @@ class FileParserGUI:
                                 "Please select a client first!")
             return
         
-        # The WHERE clause changes based on billable status
-        if billable_status == "Should be billable":
-            where_clause = "WHERE unbillable IS TRUE"
-        else:  # Should not be billable
-            where_clause = "WHERE unbillable IS FALSE OR unbillable IS NULL"
-        
-        query_lines = [
-            "SELECT",
-            "    user_id,",
-            "    email,",
-            "    first_name,",
-            "    last_name,",
-            "    date_of_birth,",
-            "    total_bps,",
-            "    CASE",
-            "        WHEN first_login_date IS NULL",
-            "             OR NULLIF(first_login_date::text, '') IS NULL THEN NULL",
-            "        WHEN first_login_date::text ~ '^[0-9]+$'",
-            "             THEN to_timestamp((first_login_date::bigint) / 1000.0)::date",
-            "        ELSE first_login_date::date",
-            "    END AS first_login_date,",
-            "    CASE",
-            "        WHEN last_login_date IS NULL",
-            "             OR NULLIF(last_login_date::text, '') IS NULL THEN NULL",
-            "        WHEN last_login_date::text ~ '^[0-9]+$'",
-            "             THEN to_timestamp((last_login_date::bigint) / 1000.0)::date",
-            "        ELSE last_login_date::date",
-            "    END AS last_login_date,",
-            "    CASE",
-            "        WHEN last_bp_date IS NULL",
-            "             OR NULLIF(last_bp_date::text, '') IS NULL THEN NULL",
-            "        WHEN last_bp_date::text ~ '^[0-9]+$'",
-            "             THEN to_timestamp((last_bp_date::bigint) / 1000.0)::date",
-            "        ELSE last_bp_date::date",
-            "    END AS last_bp_date,",
-            "    CASE",
-            "        WHEN termination_date IS NULL",
-            "             OR NULLIF(termination_date::text, '') IS NULL THEN NULL",
-            "        WHEN termination_date::text ~ '^[0-9]+$'",
-            "             THEN to_timestamp((termination_date::bigint) / 1000.0)::date",
-            "        ELSE termination_date::date",
-            "    END AS termed_in_cheif",
-            f"FROM {client}.users",
-            where_clause,
-            "ORDER BY last_login_date DESC NULLS LAST;"
-        ]
-        
-        query = "\n".join(query_lines)
-        
-        # Automatically copy to clipboard
-        self.root.clipboard_clear()
-        self.root.clipboard_append(query)
-        
-        # Show simple confirmation popup
-        messagebox.showinfo("Copied", f"Copied Query for: {client}")
-    
-    def stop_query(self):
-        """Stop the running database query"""
-        self.query_cancelled = True
-        
-        # Try to cancel the query and close connection
-        try:
-            if self.db_cursor:
-                self.db_cursor.close()
-            if self.db_connection:
-                self.db_connection.cancel()
-                self.db_connection.close()
-        except:
-            pass
-        
-        # Reset UI - swap buttons back
-        self.root.config(cursor="")
-        self.stop_query_btn.pack_forget()
-        self.run_query_btn.pack()
-        
-        messagebox.showinfo("Query Cancelled", "Database query has been stopped.")
-    
-    def run_query_in_db(self):
-        """Run the query directly in PostgreSQL database and load results"""
-        if not PSYCOPG2_AVAILABLE:
-            messagebox.showerror("Error", 
-                               "psycopg2 is not installed!\n\n"
-                               "Install it using:\npip install psycopg2-binary")
-            return
-        
-        client = self.client.get()
-        billable_status = self.billable_status.get()
-        
-        if not billable_status:
-            messagebox.showwarning("Billable Status Required", 
-                                "Please select a billable status first!")
-            return
-        
-        if not client:
-            messagebox.showwarning("Client Required", 
-                                "Please select a client first!")
-            return
-        
-        # Validate database configuration
-        db_host = self.db_host.get().strip()
-        db_port = self.db_port.get().strip()
-        db_name = self.db_name.get().strip()
-        db_user = self.db_user.get().strip()
-        db_password = self.db_password.get()
-        
-        # Debug logging for troubleshooting
-        print(f"Bill Hunter Debug - Database credentials:")
-        print(f"  - in_hellotoolbelt: {self.in_hellotoolbelt}")
-        print(f"  - db_host: {db_host}")
-        print(f"  - db_port: {db_port}")
-        print(f"  - db_name: {db_name}")
-        print(f"  - db_user: {db_user}")
-        print(f"  - db_password length: {len(db_password) if db_password else 0}")
-        print(f"  - db_password empty: {not db_password or not db_password.strip()}")
-        
-        if self.in_hellotoolbelt:
-            print(f"  - HelloToolbelt db_password value: {self.hellotoolbelt_instance.db_password.get()}")
-            print(f"  - Same object: {self.db_password is self.hellotoolbelt_instance.db_password}")
-        
-        if not all([db_host, db_port, db_name, db_user]):
-            messagebox.showwarning("Database Configuration Required",
-                                 "Please fill in all database connection fields:\n"
-                                 "Host, Port, Database, and Username")
-            return
-        
-        # Check if password is missing and warn user
-        if not db_password or not db_password.strip():
-            result = messagebox.askyesno("Password Missing", 
-                                        "Database password is empty.\n\n"
-                                        "Connection will likely fail if password is required.\n\n"
-                                        "Continue anyway?")
-            if not result:
-                return
-        
-        # Generate the query
         if billable_status == "Should be billable":
             where_clause = "WHERE unbillable IS TRUE"
         else:
@@ -3336,24 +2809,142 @@ class FileParserGUI:
         
         query = "\n".join(query_lines)
         
-        # Reset cancellation flag
+        self.root.clipboard_clear()
+        self.root.clipboard_append(query)
+        
+        messagebox.showinfo("Copied", f"Copied Query for: {client}")
+    
+    def stop_query(self):
+        self.query_cancelled = True
+        
+        try:
+            if self.db_cursor:
+                self.db_cursor.close()
+            if self.db_connection:
+                self.db_connection.cancel()
+                self.db_connection.close()
+        except:
+            pass
+        
+        self.root.config(cursor="")
+        self.stop_query_btn.pack_forget()
+        self.run_query_btn.pack()
+        
+        messagebox.showinfo("Query Cancelled", "Database query has been stopped.")
+    
+    def run_query_in_db(self):
+        if not PSYCOPG2_AVAILABLE:
+            messagebox.showerror("Error", 
+                               "psycopg2 is not installed!\n\n"
+                               "Install it using:\npip install psycopg2-binary")
+            return
+        
+        client = self.client.get()
+        billable_status = self.billable_status.get()
+        
+        if not billable_status:
+            messagebox.showwarning("Billable Status Required", 
+                                "Please select a billable status first!")
+            return
+        
+        if not client:
+            messagebox.showwarning("Client Required", 
+                                "Please select a client first!")
+            return
+        
+        db_host = self.db_host.get().strip()
+        db_port = self.db_port.get().strip()
+        db_name = self.db_name.get().strip()
+        db_user = self.db_user.get().strip()
+        db_password = self.db_password.get()
+        
+        print(f"Bill Hunter Debug - Database credentials:")
+        print(f"  - in_hellotoolbelt: {self.in_hellotoolbelt}")
+        print(f"  - db_host: {db_host}")
+        print(f"  - db_port: {db_port}")
+        print(f"  - db_name: {db_name}")
+        print(f"  - db_user: {db_user}")
+        print(f"  - db_password length: {len(db_password) if db_password else 0}")
+        print(f"  - db_password empty: {not db_password or not db_password.strip()}")
+        
+        if self.in_hellotoolbelt:
+            print(f"  - HelloToolbelt db_password value: {self.hellotoolbelt_instance.db_password.get()}")
+            print(f"  - Same object: {self.db_password is self.hellotoolbelt_instance.db_password}")
+        
+        if not all([db_host, db_port, db_name, db_user]):
+            messagebox.showwarning("Database Configuration Required",
+                                 "Please fill in all database connection fields:\n"
+                                 "Host, Port, Database, and Username")
+            return
+        
+        if not db_password or not db_password.strip():
+            result = messagebox.askyesno("Password Missing", 
+                                        "Database password is empty.\n\n"
+                                        "Connection will likely fail if password is required.\n\n"
+                                        "Continue anyway?")
+            if not result:
+                return
+        
+        if billable_status == "Should be billable":
+            where_clause = "WHERE unbillable IS TRUE"
+        else:
+            where_clause = "WHERE unbillable IS FALSE OR unbillable IS NULL"
+        
+        query_lines = [
+            "SELECT",
+            "    user_id,",
+            "    email,",
+            "    first_name,",
+            "    last_name,",
+            "    date_of_birth,",
+            "    total_bps,",
+            "    CASE",
+            "        WHEN first_login_date IS NULL",
+            "             OR NULLIF(first_login_date::text, '') IS NULL THEN NULL",
+            "        WHEN first_login_date::text ~ '^[0-9]+$'",
+            "             THEN to_timestamp((first_login_date::bigint) / 1000.0)::date",
+            "        ELSE first_login_date::date",
+            "    END AS first_login_date,",
+            "    CASE",
+            "        WHEN last_login_date IS NULL",
+            "             OR NULLIF(last_login_date::text, '') IS NULL THEN NULL",
+            "        WHEN last_login_date::text ~ '^[0-9]+$'",
+            "             THEN to_timestamp((last_login_date::bigint) / 1000.0)::date",
+            "        ELSE last_login_date::date",
+            "    END AS last_login_date,",
+            "    CASE",
+            "        WHEN last_bp_date IS NULL",
+            "             OR NULLIF(last_bp_date::text, '') IS NULL THEN NULL",
+            "        WHEN last_bp_date::text ~ '^[0-9]+$'",
+            "             THEN to_timestamp((last_bp_date::bigint) / 1000.0)::date",
+            "        ELSE last_bp_date::date",
+            "    END AS last_bp_date,",
+            "    CASE",
+            "        WHEN termination_date IS NULL",
+            "             OR NULLIF(termination_date::text, '') IS NULL THEN NULL",
+            "        WHEN termination_date::text ~ '^[0-9]+$'",
+            "             THEN to_timestamp((termination_date::bigint) / 1000.0)::date",
+            "        ELSE termination_date::date",
+            "    END AS termed_in_cheif",
+            f"FROM {client}.users",
+            where_clause,
+            "ORDER BY last_login_date DESC NULLS LAST;"
+        ]
+        
+        query = "\n".join(query_lines)
+        
         self.query_cancelled = False
         
-        # Show stop button and hide run button (swap in same container)
         self.run_query_btn.pack_forget()
         self.stop_query_btn.pack()
         
-        # Change cursor to show loading
         self.root.config(cursor="watch")
         self.root.update()
         
-        # Try to connect and execute query
         try:
-            # Check if cancelled before connecting
             if self.query_cancelled:
                 raise Exception("Query cancelled by user")
             
-            # Connect to database
             self.db_connection = psycopg2.connect(
                 host=db_host,
                 port=db_port,
@@ -3363,52 +2954,42 @@ class FileParserGUI:
                 connect_timeout=10
             )
             
-            # Check if cancelled after connecting
             if self.query_cancelled:
                 self.db_connection.close()
                 raise Exception("Query cancelled by user")
             
             self.db_cursor = self.db_connection.cursor()
             
-            # Execute query
             self.db_cursor.execute(query)
             
-            # Check if cancelled during execution
             if self.query_cancelled:
                 self.db_cursor.close()
                 self.db_connection.close()
                 raise Exception("Query cancelled by user")
             
-            # Fetch all results
             results = self.db_cursor.fetchall()
             
-            # Get column names
             column_names = [desc[0] for desc in self.db_cursor.description]
             
-            # Close connection
             self.db_cursor.close()
             self.db_connection.close()
             self.db_cursor = None
             self.db_connection = None
             
-            # Store results
             self.postgres_data = results
             
-            # Reset cursor
             self.root.config(cursor="")
             
-            # Hide stop button and show run button (swap back)
             self.stop_query_btn.pack_forget()
             self.run_query_btn.pack()
             
-            # Display success message
             messagebox.showinfo("Success", 
                               f"Query executed successfully!\n\n"
                               f"Retrieved {len(results)} rows from {client}.users\n\n"
                               f"Results are now ready for matching.")
             
         except psycopg2.OperationalError as e:
-            self.root.config(cursor="")  # Reset cursor
+            self.root.config(cursor="")
             self.stop_query_btn.pack_forget()
             self.run_query_btn.pack()
             
@@ -3436,26 +3017,25 @@ class FileParserGUI:
                 messagebox.showerror("Connection Error", 
                                    f"Could not connect to database:\n\n{error_msg}")
         except psycopg2.ProgrammingError as e:
-            self.root.config(cursor="")  # Reset cursor
+            self.root.config(cursor="")
             self.stop_query_btn.pack_forget()
             self.run_query_btn.pack()
             messagebox.showerror("Query Error", 
                                f"Error in SQL query:\n\n{str(e)}\n\n"
                                f"Schema '{client}' may not exist or table 'users' not found.")
         except psycopg2.Error as e:
-            self.root.config(cursor="")  # Reset cursor
+            self.root.config(cursor="")
             self.stop_query_btn.pack_forget()
             self.run_query_btn.pack()
             messagebox.showerror("Database Error", 
                                f"Database error:\n\n{str(e)}")
         except Exception as e:
-            self.root.config(cursor="")  # Reset cursor
+            self.root.config(cursor="")
             self.stop_query_btn.pack_forget()
             self.run_query_btn.pack()
             
-            # Check if it was a user cancellation
             if self.query_cancelled or "cancelled by user" in str(e).lower():
-                return  # Don't show error for user cancellation
+                return
             
             messagebox.showerror("Error", 
                                f"Unexpected error:\n\n{str(e)}")
@@ -3474,14 +3054,12 @@ class FileParserGUI:
         self.tree['columns'] = self.headers
         self.tree['show'] = 'headings'
         
-        # Reset sort state
         self.sort_reverse = {}
         
         for col in self.headers:
             self.tree.heading(col, text=col, command=lambda c=col: self.sort_treeview(c))
             self.tree.column(col, width=150, anchor=tk.W)
         
-        # Store all results for filtering
         self.all_results = list(self.data)
         
         for row in self.data:
@@ -3493,24 +3071,19 @@ class FileParserGUI:
         
         data_list = [(self.tree.set(item, col), item) for item in self.tree.get_children('')]
         
-        # Toggle sort direction
         reverse = self.sort_reverse.get(col, False)
         self.sort_reverse[col] = not reverse
         
-        # Store current sort column for reference
         self.current_sort_column = col
         
-        # Check if column contains dates based on column name or content
         is_date_column = any(keyword in col.lower() for keyword in ['date', 'modified', 'created', 'updated', 'term'])
         
         if is_date_column:
-            # Try to sort as dates
             def date_key(item):
                 val = item[0]
                 if not val or val == '':
                     return datetime.min if not reverse else datetime.max
                 
-                # Try multiple date formats
                 for fmt in ['%Y-%m-%d', '%m/%d/%Y', '%m-%d-%Y', '%d/%m/%Y', '%Y/%m/%d', 
                            '%Y-%m-%d %H:%M:%S', '%m/%d/%Y %H:%M:%S']:
                     try:
@@ -3518,26 +3091,21 @@ class FileParserGUI:
                     except (ValueError, AttributeError):
                         continue
                 
-                # If parsing fails, return original for string sort
                 return datetime.min if not reverse else datetime.max
             
             try:
                 data_list.sort(key=date_key, reverse=reverse)
             except Exception:
-                # Fall back to string sort if date parsing fails
                 data_list.sort(key=lambda t: t[0].lower() if t[0] else '', reverse=reverse)
         else:
-            # Try numeric sort first, fall back to string sort
             try:
                 data_list.sort(key=lambda t: float(t[0]) if t[0] else 0, reverse=reverse)
             except (ValueError, TypeError):
                 data_list.sort(key=lambda t: str(t[0]).lower() if t[0] else '', reverse=reverse)
         
-        # Reorder items in tree
         for index, (val, item) in enumerate(data_list):
             self.tree.move(item, '', index)
         
-        # Update column headers with sort indicators
         for column in columns:
             if column == col:
                 direction = ' ▼' if reverse else ' ▲'
@@ -3548,7 +3116,6 @@ class FileParserGUI:
                                 command=lambda c=column: self.sort_treeview(c))
                 
     def copy_all_results(self):
-        """Copy all results from the treeview to clipboard"""
         items = self.tree.get_children()
         
         if not items:
@@ -3569,9 +3136,7 @@ class FileParserGUI:
         messagebox.showinfo("Copied", f"Copied {len(items)} rows to clipboard!")
     
     def filter_results(self):
-        """Filter displayed results based on search term"""
         if not hasattr(self, 'all_results'):
-            # Store all results on first filter call
             self.all_results = []
             for item in self.tree.get_children():
                 values = self.tree.item(item)['values']
@@ -3579,45 +3144,19 @@ class FileParserGUI:
         
         search_term = self.search_var.get().lower()
         
-        # Clear current display
         self.tree.delete(*self.tree.get_children())
         
         if not search_term:
-            # Show all results if search is empty
             for row in self.all_results:
                 self.tree.insert('', tk.END, values=row)
         else:
-            # Show only matching results
             for row in self.all_results:
-                # Search across all columns
                 if any(search_term in str(value).lower() for value in row):
                     self.tree.insert('', tk.END, values=row)
     
     def clear_search(self):
-        """Clear the search box"""
         self.search_var.set('')
         self.search_entry.focus()
-    
-    def copy_all_results_OLD(self):
-        """Copy all results from the treeview to clipboard"""
-        items = self.tree.get_children()
-        
-        if not items:
-            messagebox.showinfo("No Data", "No results to copy!")
-            return
-        
-        columns = list(self.tree['columns'])
-        copied_text = '\t'.join(columns) + '\n'
-        
-        for item in items:
-            values = self.tree.item(item)['values']
-            row_text = '\t'.join(str(v) for v in values)
-            copied_text += row_text + '\n'
-        
-        self.root.clipboard_clear()
-        self.root.clipboard_append(copied_text.strip())
-        
-        messagebox.showinfo("Copied", f"Copied {len(items)} rows to clipboard!")
 
     def paste_postgres_results(self):
         try:
@@ -3656,7 +3195,6 @@ class FileParserGUI:
             messagebox.showwarning("No PostgreSQL Data", "Please paste PostgreSQL results first!")
             return
         
-        # Get the selected client and billable status
         selected_client = self.client.get()
         billable_status = self.billable_status.get()
         
@@ -3678,39 +3216,32 @@ class FileParserGUI:
                                 "Please select first name and last name columns!")
             return
         
-        # Create progress window
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Matching Results")
         progress_window.geometry("450x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
-        # Center the progress window
         progress_window.update_idletasks()
         x = (progress_window.winfo_screenwidth() // 2) - (225)
         y = (progress_window.winfo_screenheight() // 2) - (90)
         progress_window.geometry(f"450x180+{x}+{y}")
         
-        # Title
         title_label = tk.Label(progress_window, text=f"Matching Results for: {selected_client}", 
                               font=('Segoe UI', 12, 'bold'), pady=15)
         title_label.pack()
         
-        # Status label
         status_label = tk.Label(progress_window, text="Initializing...", 
                                font=('Segoe UI', 10))
         status_label.pack(pady=5)
         
-        # Progress bar (determinate mode)
         progress_bar = ttk.Progressbar(progress_window, mode='determinate', length=350)
         progress_bar.pack(pady=10)
         
-        # Progress text
         progress_text = tk.Label(progress_window, text="0%", 
                                 font=('Segoe UI', 9), fg='gray')
         progress_text.pack()
         
-        # Details label
         details_label = tk.Label(progress_window, text="", 
                                 font=('Segoe UI', 8), fg='gray')
         details_label.pack(pady=5)
@@ -3729,12 +3260,11 @@ class FileParserGUI:
             pg_first_idx = 2
             pg_last_idx = 3
             pg_dob_idx = 4
-            pg_term_idx = 9  # termed_in_cheif index in PostgreSQL results
+            pg_term_idx = 9
             
             today = datetime.now().date()
             
             if billable_status == "Should be billable":
-                # ORIGINAL LOGIC: Match PG users with eligibility file (exclude past term dates)
                 file_names_to_include = {}
                 excluded_count = 0
                 
@@ -3743,8 +3273,8 @@ class FileParserGUI:
                 progress_window.update()
                 
                 for idx, row in enumerate(self.data):
-                    if idx % 50 == 0:  # Update every 50 rows
-                        progress = int((idx / len(self.data)) * 30)  # 0-30% for file processing
+                    if idx % 50 == 0:
+                        progress = int((idx / len(self.data)) * 30)
                         progress_bar['value'] = progress
                         progress_text.config(text=f"{progress}%")
                         details_label.config(text=f"Processing row {idx + 1} of {len(self.data)}")
@@ -3754,19 +3284,16 @@ class FileParserGUI:
                         first = row[first_idx].strip().lower()
                         last = row[last_idx].strip().lower()
                         
-                        # Get DOB if available
                         dob = ''
                         if dob_idx is not None and len(row) > dob_idx:
                             dob = row[dob_idx].strip()
                         
-                        # Get termination date from file
                         file_term_date = ''
                         if term_idx is not None and len(row) > term_idx:
                             file_term_date = row[term_idx].strip()
                         
                         should_include = True
                         
-                        # Check termination date - EXCLUDE if date is in the past
                         if file_term_date and file_term_date != '':
                             try:
                                 term_date = None
@@ -3777,7 +3304,6 @@ class FileParserGUI:
                                     except ValueError:
                                         continue
                                 
-                                # EXCLUDE if termination date is in the past (before today)
                                 if term_date and term_date < today:
                                     should_include = False
                                     excluded_count += 1
@@ -3785,7 +3311,6 @@ class FileParserGUI:
                                 pass
                         
                         if should_include:
-                            # Store the termination date from the file along with the key
                             if dob:
                                 file_names_to_include[(first, last, dob)] = file_term_date
                             else:
@@ -3800,8 +3325,8 @@ class FileParserGUI:
                 progress_window.update()
                 
                 for idx, pg_row in enumerate(self.postgres_data):
-                    if idx % 50 == 0:  # Update every 50 rows
-                        progress = 30 + int((idx / len(self.postgres_data)) * 70)  # 30-100% for matching
+                    if idx % 50 == 0:
+                        progress = 30 + int((idx / len(self.postgres_data)) * 70)
                         progress_bar['value'] = progress
                         progress_text.config(text=f"{progress}%")
                         details_label.config(text=f"Matching row {idx + 1} of {len(self.postgres_data)}")
@@ -3811,27 +3336,21 @@ class FileParserGUI:
                         first = self.clean_postgres_value(pg_row[pg_first_idx]).lower()
                         last = self.clean_postgres_value(pg_row[pg_last_idx]).lower()
                         
-                        # Get DOB from PostgreSQL results
                         pg_dob = ''
                         if len(pg_row) > pg_dob_idx:
                             pg_dob = self.clean_postgres_value(pg_row[pg_dob_idx]).strip()
                         
-                        # Try matching with DOB first
                         matched_term_date = None
                         if pg_dob and (first, last, pg_dob) in file_names_to_include:
                             matched_term_date = file_names_to_include[(first, last, pg_dob)]
                             match_with_dob_count += 1
-                        # Fall back to matching without DOB if DOB match fails
                         elif (first, last, '') in file_names_to_include:
                             matched_term_date = file_names_to_include[(first, last, '')]
                             match_without_dob_count += 1
                         
-                        # If we found a match, add the client and termination date
                         if matched_term_date is not None:
-                            modified_row = [selected_client]  # Start with client in first position
-                            # Add the rest of the PostgreSQL row data
+                            modified_row = [selected_client]
                             modified_row.extend(pg_row)
-                            # Append the file termination date as termination_date column
                             modified_row.append(matched_term_date)
                             self.matched_results.append(modified_row)
                 
@@ -3845,19 +3364,17 @@ class FileParserGUI:
                 if excluded_count > 0:
                     msg += f"{excluded_count} users with past termination dates were excluded from the file."
             
-            else:  # Should not be billable
-                # NEW LOGIC: Show PG users who are NOT in file OR have past termination dates
-                # Build a dictionary of all names in the eligibility file with their term dates
-                file_names_with_dob = {}  # Changed from set to dict to store term dates
-                file_names_without_dob = {}  # Changed from set to dict to store term dates
+            else:
+                file_names_with_dob = {}
+                file_names_without_dob = {}
                 
                 status_label.config(text="Building file index...")
                 progress_bar['maximum'] = 100
                 progress_window.update()
                 
                 for idx, row in enumerate(self.data):
-                    if idx % 50 == 0:  # Update every 50 rows
-                        progress = int((idx / len(self.data)) * 30)  # 0-30% for file indexing
+                    if idx % 50 == 0:
+                        progress = int((idx / len(self.data)) * 30)
                         progress_bar['value'] = progress
                         progress_text.config(text=f"{progress}%")
                         details_label.config(text=f"Indexing row {idx + 1} of {len(self.data)}")
@@ -3867,20 +3384,17 @@ class FileParserGUI:
                         first = row[first_idx].strip().lower()
                         last = row[last_idx].strip().lower()
                         
-                        if not first or not last:  # Skip empty names
+                        if not first or not last:
                             continue
                         
-                        # Get DOB if available
                         dob = ''
                         if dob_idx is not None and len(row) > dob_idx:
                             dob = row[dob_idx].strip()
                         
-                        # Get termination date from file
                         file_term_date = ''
                         if term_idx is not None and len(row) > term_idx:
                             file_term_date = row[term_idx].strip()
                         
-                        # Store names with their termination dates
                         if dob:
                             file_names_with_dob[(first, last, dob)] = file_term_date
                         else:
@@ -3894,10 +3408,9 @@ class FileParserGUI:
                 status_label.config(text="Finding non-billable users...")
                 progress_window.update()
                 
-                # Find PG users who are NOT in the eligibility file OR have past termination dates
                 for idx, pg_row in enumerate(self.postgres_data):
-                    if idx % 50 == 0:  # Update every 50 rows
-                        progress = 30 + int((idx / len(self.postgres_data)) * 70)  # 30-100% for matching
+                    if idx % 50 == 0:
+                        progress = 30 + int((idx / len(self.postgres_data)) * 70)
                         progress_bar['value'] = progress
                         progress_text.config(text=f"{progress}%")
                         details_label.config(text=f"Checking row {idx + 1} of {len(self.postgres_data)}")
@@ -3907,43 +3420,36 @@ class FileParserGUI:
                         first = self.clean_postgres_value(pg_row[pg_first_idx]).lower()
                         last = self.clean_postgres_value(pg_row[pg_last_idx]).lower()
                         
-                        if not first or not last:  # Skip empty names
+                        if not first or not last:
                             continue
                         
-                        # Get DOB from PostgreSQL results
                         pg_dob = ''
                         if len(pg_row) > pg_dob_idx:
                             pg_dob = self.clean_postgres_value(pg_row[pg_dob_idx]).strip()
                         
-                        # Check if this person is in the eligibility file and get their term date
                         found_in_file = False
                         file_term_date_for_match = None
                         
-                        # First try to match with DOB if PG has DOB
                         if pg_dob:
                             if (first, last, pg_dob) in file_names_with_dob:
                                 found_in_file = True
                                 file_term_date_for_match = file_names_with_dob[(first, last, pg_dob)]
                         
-                        # If not found with DOB, check name-only match
                         if not found_in_file:
                             if (first, last) in file_names_without_dob:
                                 found_in_file = True
                                 file_term_date_for_match = file_names_without_dob[(first, last)]
                             else:
-                                # Also check if name exists in file with any DOB
                                 for (file_first, file_last, file_dob), term_date in file_names_with_dob.items():
                                     if first == file_first and last == file_last:
                                         found_in_file = True
                                         file_term_date_for_match = term_date
                                         break
                         
-                        # Get termination date from PG results (column 9 - termed_in_cheif)
                         pg_term_date = ''
                         if len(pg_row) > pg_term_idx:
                             pg_term_date = self.clean_postgres_value(pg_row[pg_term_idx])
                         
-                        # Check if FILE termination date is in the past (if user is in file)
                         has_past_file_term_date = False
                         if found_in_file and file_term_date_for_match and file_term_date_for_match.strip():
                             try:
@@ -3955,13 +3461,11 @@ class FileParserGUI:
                                     except ValueError:
                                         continue
                                 
-                                # Check if file termination date is in the past (before today)
                                 if file_term_date_obj and file_term_date_obj < today:
                                     has_past_file_term_date = True
                             except Exception:
                                 pass
                         
-                        # Check if termed_in_cheif date is in the future
                         has_future_termed_in_cheif = False
                         if pg_term_date and pg_term_date.strip():
                             try:
@@ -3973,33 +3477,25 @@ class FileParserGUI:
                                     except ValueError:
                                         continue
                                 
-                                # Check if termed_in_cheif date is in the future (today or later)
                                 if cheif_term_date and cheif_term_date >= today:
                                     has_future_termed_in_cheif = True
                             except Exception:
                                 pass
                         
-                        # Include if NOT in file OR has past termination date (either condition)
-                        # BUT exclude if has past FILE term date AND future termed_in_cheif (auto-term scheduled)
                         should_include = False
                         if has_past_file_term_date and has_future_termed_in_cheif:
-                            # Exclude: has past term date in file but will auto-term in the future
                             should_include = False
                             excluded_auto_term_count += 1
                         elif not found_in_file:
-                            # Not in file at all - should not be billable
                             should_include = True
                             not_in_file_count += 1
                         elif has_past_file_term_date:
-                            # In file but has past term date - should not be billable
                             should_include = True
                             past_term_in_file_count += 1
                         
                         if should_include:
-                            modified_row = [selected_client]  # Start with client in first position
-                            # Add the rest of the PostgreSQL row data
+                            modified_row = [selected_client]
                             modified_row.extend(pg_row)
-                            # Use the file termination date if in file, otherwise PG date
                             final_term_date = file_term_date_for_match if found_in_file else ''
                             modified_row.append(final_term_date)
                             self.matched_results.append(modified_row)
@@ -4017,7 +3513,6 @@ class FileParserGUI:
                     msg += f"  • {excluded_auto_term_count} users with past term dates but future termed_in_cheif (auto-term scheduled)\n"
                 msg += f"\n(File contained {len(file_names_with_dob) + len(file_names_without_dob)} unique names)"
             
-            # Display results in tree
             status_label.config(text="Displaying results...")
             progress_bar['value'] = 100
             progress_text.config(text="100%")
@@ -4028,20 +3523,17 @@ class FileParserGUI:
             self.tree['columns'] = self.postgres_headers
             self.tree['show'] = 'headings'
             
-            # Reset sort state
             self.sort_reverse = {}
             
             for col in self.postgres_headers:
                 self.tree.heading(col, text=col, command=lambda c=col: self.sort_treeview(c))
                 self.tree.column(col, width=150, anchor=tk.W)
             
-            # Store all results for filtering
             self.all_results = list(self.matched_results)
             
             for row in self.matched_results:
                 self.tree.insert('', tk.END, values=row)
             
-            # Close progress window
             progress_window.destroy()
             
             messagebox.showinfo("Match Complete", msg)

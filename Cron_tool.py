@@ -8,63 +8,46 @@ class ScrollableFrame(tk.Frame):
     def __init__(self, parent, bg_color='#ffffff', *args, **kwargs):
         super().__init__(parent, *args, **kwargs)
         
-        # Store parent reference
         self.parent = parent
         
-        # Create container
         container = tk.Frame(self, bg=bg_color)
         container.pack(fill="both", expand=True)
         
-        # Canvas and scrollbars (removed horizontal scrollbar)
         self.canvas = tk.Canvas(container, highlightthickness=0, bg=bg_color)
         self.scrollbar_v = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
         
-        # Scrollable frame
         self.scrollable_frame = tk.Frame(self.canvas, bg=bg_color)
         
-        # Configure canvas (removed horizontal scrolling)
         self.canvas.configure(yscrollcommand=self.scrollbar_v.set)
         self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         
-        # Pack components (removed horizontal scrollbar packing)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar_v.pack(side="right", fill="y")
         
-        # Scrolling state
         self.canvas_has_focus = False
         
-        # Bind events
         self.scrollable_frame.bind("<Configure>", self._on_frame_configure)
         self.canvas.bind("<Configure>", self._on_canvas_configure)
         
-        # Setup scrolling based on environment
         self._setup_scrolling()
         
     def _setup_scrolling(self):
-        """Setup scrolling - works for both standalone and HelloToolbelt"""
-        # Check if we're in HelloToolbelt
         self.in_toolbelt = self._detect_hellotoolbelt()
         
-        # Always bind enter/leave for focus tracking
         self.canvas.bind("<Enter>", self._on_enter)
         self.canvas.bind("<Leave>", self._on_leave)
         
-        # Bind mouse wheel events
         self.canvas.bind("<MouseWheel>", self._on_mousewheel)
         
-        # Linux support
         self.canvas.bind("<Button-4>", self._on_mousewheel_linux)
         self.canvas.bind("<Button-5>", self._on_mousewheel_linux)
         
-        # Also bind to the scrollable frame itself
         self._bind_mousewheel_to_children(self.scrollable_frame)
         
     def _detect_hellotoolbelt(self):
-        """Detect if we're running inside HelloToolbelt"""
         try:
             current_parent = self.parent
             while current_parent:
-                # Look for HelloToolbelt MockRoot characteristics
                 if (hasattr(current_parent, '_title') and 
                     hasattr(current_parent, 'pack') and 
                     hasattr(current_parent, '_current_bg')):
@@ -78,7 +61,6 @@ class ScrollableFrame(tk.Frame):
             return False
         
     def _bind_mousewheel_to_children(self, widget):
-        """Recursively bind mousewheel to all child widgets"""
         try:
             widget.bind("<MouseWheel>", self._on_mousewheel)
             widget.bind("<Button-4>", self._on_mousewheel_linux)
@@ -90,7 +72,6 @@ class ScrollableFrame(tk.Frame):
             pass
     
     def _on_enter(self, event):
-        """Mouse entered canvas"""
         self.canvas_has_focus = True
         try:
             self.canvas.focus_set()
@@ -98,23 +79,18 @@ class ScrollableFrame(tk.Frame):
             pass
         
     def _on_leave(self, event):
-        """Mouse left canvas"""
         self.canvas_has_focus = False
         
     def _on_mousewheel(self, event):
-        """Universal mouse wheel handler"""
-        # In HelloToolbelt mode, only scroll if we have focus
         if self.in_toolbelt and not self.canvas_has_focus:
             return "break"
         
         return self._do_scroll(event)
         
     def _on_mousewheel_linux(self, event):
-        """Linux scroll wheel support"""
         if self.in_toolbelt and not self.canvas_has_focus:
             return "break"
         
-        # Convert Linux button events to scroll
         if event.num == 4:
             delta = -1
         elif event.num == 5:
@@ -125,9 +101,7 @@ class ScrollableFrame(tk.Frame):
         return self._do_scroll_with_delta(delta)
     
     def _do_scroll(self, event):
-        """Perform the actual scrolling"""
         try:
-            # Calculate delta
             if hasattr(event, 'delta'):
                 delta = int(-1 * (event.delta / 120))
             else:
@@ -139,66 +113,49 @@ class ScrollableFrame(tk.Frame):
             return "break"
     
     def _do_scroll_with_delta(self, delta):
-        """Perform scrolling with given delta"""
         try:
-            # Limit scroll speed
             delta = max(-3, min(3, delta))
             
-            # Get current scroll position
             current_top, current_bottom = self.canvas.yview()
             
-            # Get canvas and scrollable frame dimensions
             canvas_height = self.canvas.winfo_height()
             self.canvas.update_idletasks()  # Ensure geometry is up to date
             
-            # Get the bounding box of all items in canvas
             bbox = self.canvas.bbox("all")
             if not bbox:
-                # No content to scroll
                 return "break"
             
-            # Calculate total content height
             content_height = bbox[3] - bbox[1]  # bottom - top
             
-            # If content fits entirely in canvas, don't allow scrolling
             if content_height <= canvas_height:
                 return "break"
             
-            # Calculate scroll boundaries more precisely
-            # current_top and current_bottom are fractions (0.0 to 1.0)
             scroll_top = current_top
             scroll_bottom = current_bottom
             
-            # Prevent scrolling up if already at top
             if delta < 0 and scroll_top <= 0.0:
                 return "break"
                 
-            # Prevent scrolling down if already at bottom
             if delta > 0 and scroll_bottom >= 1.0:
                 return "break"
             
-            # Perform scroll
             self.canvas.yview_scroll(delta, "units")
             return "break"
             
-        except Exception as e:
-            print(f"Scroll error: {e}")
+        except Exception:
             return "break"
         
     def check_scroll_needed(self):
-        """Check if scrolling is needed and update scrollbar visibility"""
         try:
             self.canvas.update_idletasks()
             bbox = self.canvas.bbox("all")
             if not bbox:
-                # Hide scrollbar if no content
                 self.scrollbar_v.pack_forget()
                 return False
             
             canvas_height = self.canvas.winfo_height()
             content_height = bbox[3] - bbox[1]
             
-            # Show/hide scrollbars based on need
             if content_height > canvas_height:
                 self.scrollbar_v.pack(side="right", fill="y")
                 return True
@@ -209,42 +166,32 @@ class ScrollableFrame(tk.Frame):
             return False
     
     def _on_frame_configure(self, event):
-        """Update scroll region when frame size changes"""
         try:
             self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-            # Check if scrollbars are needed after content change
             self.canvas.after_idle(self.check_scroll_needed)
         except Exception:
             pass
         
     def _on_canvas_configure(self, event):
-        """Update canvas window size when canvas is resized"""
         try:
             canvas_width = event.width
-            # Ensure the scrollable frame matches the canvas width to prevent horizontal scrolling
             self.canvas.itemconfig(self.canvas_window, width=canvas_width)
-            # Also update scroll region when canvas is resized
             self.canvas.after_idle(self._update_scroll_region)
-            # Check if scrollbars are needed after resize
             self.canvas.after_idle(self.check_scroll_needed)
         except Exception:
             pass
     
     def _update_scroll_region(self):
-        """Force update the scroll region"""
         try:
             self.canvas.update_idletasks()
             bbox = self.canvas.bbox("all")
             if bbox:
-                # Only set the scroll region for vertical scrolling
                 self.canvas.configure(scrollregion=(0, bbox[1], 0, bbox[3]))
         except Exception:
             pass
     
     def force_scroll_update(self):
-        """Public method to force scroll region update and rebind events"""
         self.canvas.after_idle(self._update_scroll_region)
-        # Rebind mousewheel to any new children
         self.canvas.after_idle(lambda: self._bind_mousewheel_to_children(self.scrollable_frame))
 
 class CronJobGenerator:
@@ -252,25 +199,20 @@ class CronJobGenerator:
         self.root = root
         self.root.title("CronJob Configuration Tool")
         
-        # Add error handling for root configuration
         try:
-            # Check if this is running in HelloToolbelt (MockRoot) or standalone
             self.is_in_toolbelt = hasattr(root, '_title') and hasattr(root, 'pack')
             
             if not self.is_in_toolbelt:
-                # Only configure background if running standalone
                 self.root.configure(bg='#ffffff')
         except Exception as e:
             print(f"Warning: Could not configure root window: {e}")
             self.is_in_toolbelt = False
         
-        # Initialize state variables first
         self.cron_fields = {}
         self.cron_vars = {}
         self._updating_interface = False  # Flag to prevent recursive updates
         self._widgets_created = False  # Flag to track widget creation
         
-        # Use system default colors that will adapt to light/dark mode
         try:
             self.setup_adaptive_styling()
         except Exception as e:
@@ -279,7 +221,6 @@ class CronJobGenerator:
         
         self.root.minsize(800, 700)
         
-        # Initialize variables with error handling
         try:
             self.task_type_var = tk.StringVar(value="eligibility_and_format_file")
             self.secret_var = tk.StringVar(value="integrations")
@@ -291,7 +232,6 @@ class CronJobGenerator:
             messagebox.showerror("Initialization Error", f"Failed to initialize variables: {e}")
             return
         
-        # Build the interface with error handling
         try:
             self._create_main_interface()
             self._widgets_created = True
@@ -300,7 +240,6 @@ class CronJobGenerator:
             messagebox.showerror("Interface Error", f"Failed to create interface: {e}")
             return
         
-        # Center window only if standalone
         if not self.is_in_toolbelt:
             try:
                 self._center_window()
@@ -308,7 +247,6 @@ class CronJobGenerator:
                 print(f"Warning: Could not center window: {e}")
 
     def _setup_fallback_styling(self):
-        """Fallback styling if adaptive styling fails"""
         self.is_dark_mode = False
         self.title_font = ("Arial", 14, "bold")
         self.subtitle_font = ("Arial", 11, "bold")
@@ -320,7 +258,6 @@ class CronJobGenerator:
         self.frame_padx = 20
         self.frame_pady = 15
         
-        # Light mode fallback colors
         self.bg_color = '#ffffff'
         self.frame_bg = '#f8f9fa'
         self.header_bg = '#e9ecef'
@@ -334,19 +271,14 @@ class CronJobGenerator:
         self.button_hover_text_color = '#000000'
 
     def setup_adaptive_styling(self):
-        """Setup styling that adapts to system theme (light/dark mode)"""
-        # When running in HelloToolbelt, inherit colors from parent
         if self.is_in_toolbelt:
-            # Get colors from the parent container (HelloToolbelt)
             try:
                 parent_bg = self.root.cget('bg')
                 parent_fg = self.root.cget('fg') 
             except:
-                # Fallback colors
                 parent_bg = '#ffffff'
                 parent_fg = '#2c3e50'
         else:
-            # Get system default colors when running standalone
             try:
                 temp_label = tk.Label(self.root)
                 parent_bg = temp_label.cget('bg')
@@ -356,24 +288,18 @@ class CronJobGenerator:
                 parent_bg = '#ffffff'
                 parent_fg = '#2c3e50'
         
-        # Determine if we're in dark mode by checking background brightness
         try:
-            # Convert color to RGB if it's a hex value
             if parent_bg.startswith('#'):
                 r, g, b = int(parent_bg[1:3], 16), int(parent_bg[3:5], 16), int(parent_bg[5:7], 16)
             else:
-                # Try to get RGB values from color name
                 rgb = self.root.winfo_rgb(parent_bg)
                 r, g, b = [x // 256 for x in rgb]
             
-            # Calculate brightness (0-255)
             brightness = (r * 299 + g * 587 + b * 114) / 1000
             self.is_dark_mode = brightness < 128
         except:
-            # Fallback to light mode if color parsing fails
             self.is_dark_mode = False
         
-        # Fonts and sizes - consistent with HelloToolbelt
         self.title_font = ("Segoe UI", 14, "bold")
         self.subtitle_font = ("Segoe UI", 11, "bold")
         self.label_font = ("Segoe UI", 10)
@@ -384,9 +310,7 @@ class CronJobGenerator:
         self.frame_padx = 20
         self.frame_pady = 15
         
-        # Adaptive color scheme based on detected theme
         if self.is_dark_mode:
-            # Dark mode colors - inherit parent background for transparency
             self.bg_color = parent_bg  # Use parent's background directly
             self.frame_bg = '#3c3c3c'
             self.header_bg = '#4a4a4a'
@@ -396,11 +320,9 @@ class CronJobGenerator:
             self.warning_color = '#f39c12'
             self.text_color = parent_fg if parent_fg else '#ffffff'
             self.text_secondary = '#cccccc'
-            # Button text colors - black for both modes
             self.button_text_color = '#000000'  # Black text for good contrast
             self.button_hover_text_color = '#000000'  # Black text for hover state
         else:
-            # Light mode colors - inherit parent background for transparency
             self.bg_color = parent_bg  # Use parent's background directly
             self.frame_bg = '#f8f9fa'
             self.header_bg = '#e9ecef'
@@ -410,12 +332,10 @@ class CronJobGenerator:
             self.warning_color = '#f39c12'
             self.text_color = parent_fg if parent_fg else '#2c3e50'
             self.text_secondary = '#34495e'
-            # Button text colors - black for both modes
             self.button_text_color = '#000000'  # Black text for good contrast
             self.button_hover_text_color = '#000000'  # Black text for hover state
 
     def refresh_styling(self, is_dark_mode):
-        """Refresh styling when dark mode is toggled from HelloToolbelt"""
         if self._updating_interface:
             return  # Prevent recursive updates
             
@@ -424,14 +344,11 @@ class CronJobGenerator:
         try:
             self.is_dark_mode = is_dark_mode
             
-            # Force update the colors based on the new dark mode state
             if self.is_in_toolbelt:
-                # Get the updated colors from HelloToolbelt container
                 try:
                     parent_bg = self.root.cget('bg')
                     parent_fg = self.root.cget('fg')
                 except:
-                    # Fallback based on dark mode state
                     if is_dark_mode:
                         parent_bg = '#2b2b2b'
                         parent_fg = '#ffffff'
@@ -439,7 +356,6 @@ class CronJobGenerator:
                         parent_bg = '#ffffff'
                         parent_fg = '#2c3e50'
             else:
-                # Standalone mode - use appropriate colors
                 if is_dark_mode:
                     parent_bg = '#2b2b2b'
                     parent_fg = '#ffffff'
@@ -447,9 +363,7 @@ class CronJobGenerator:
                     parent_bg = '#ffffff'
                     parent_fg = '#2c3e50'
             
-            # Update color scheme based on new dark mode state
             if is_dark_mode:
-                # Dark mode colors
                 self.bg_color = parent_bg
                 self.frame_bg = '#3c3c3c'
                 self.header_bg = '#4a4a4a'
@@ -459,11 +373,9 @@ class CronJobGenerator:
                 self.warning_color = '#f39c12'
                 self.text_color = parent_fg
                 self.text_secondary = '#cccccc'
-                # Button text colors - black for both modes
                 self.button_text_color = '#000000'  # Black text for good contrast
                 self.button_hover_text_color = '#000000'  # Black text for hover state
             else:
-                # Light mode colors
                 self.bg_color = parent_bg
                 self.frame_bg = '#f8f9fa'
                 self.header_bg = '#e9ecef'
@@ -473,18 +385,15 @@ class CronJobGenerator:
                 self.warning_color = '#f39c12'
                 self.text_color = parent_fg
                 self.text_secondary = '#34495e'
-                # Button text colors - black for both modes
                 self.button_text_color = '#000000'  # Black text for good contrast
                 self.button_hover_text_color = '#000000'  # Black text for hover state
             
-            # Clear and recreate the interface with error handling
             try:
                 for widget in self.root.winfo_children():
                     widget.destroy()
             except tk.TclError:
                 pass  # Widgets may have been destroyed already
             
-            # Reinitialize the interface
             self._create_main_interface()
             self._widgets_created = True
                 
@@ -508,9 +417,7 @@ class CronJobGenerator:
             print(f"Warning: Could not center window: {e}")
 
     def _add_button_hover(self, button, normal_color, hover_color, normal_fg=None, hover_fg=None):
-        """Add hover effects to buttons with error handling"""
         try:
-            # Use adaptive button text colors if not specified
             if normal_fg is None:
                 normal_fg = getattr(self, 'button_text_color', '#000000')
             if hover_fg is None:
@@ -537,11 +444,9 @@ class CronJobGenerator:
 
     def _create_main_interface(self):
         try:
-            # Main container with padding (non-scrollable)
             main_container = tk.Frame(self.root, bg=self.bg_color)
             main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
             
-            # Header (stays fixed at top)
             header_frame = tk.Frame(main_container, bg=self.primary_color, relief='flat', bd=0)
             header_frame.pack(fill=tk.X, pady=(0, 20))
             
@@ -555,19 +460,16 @@ class CronJobGenerator:
                                    font=('Segoe UI', 16, 'bold'), bg=self.primary_color, fg='white')
             header_label.pack(side=tk.LEFT, anchor='w')
             
-            # Create scrollable container for content (scrolls independently)
             self.main_scrollable_container = ScrollableFrame(main_container, bg_color=self.bg_color, bg=self.bg_color)
             self.main_scrollable_container.pack(fill=tk.BOTH, expand=True)
             
             cron_container = self.main_scrollable_container.scrollable_frame
             cron_container.configure(bg=self.bg_color)
 
-            # Build sections
             self._build_cron_schedule_section(cron_container)
             self._build_cron_config_section(cron_container)
             self._build_cron_additional_settings(cron_container)
             
-            # Generate button
             button_frame = tk.Frame(cron_container, bg=self.bg_color)
             button_frame.pack(pady=20)
             
@@ -580,7 +482,6 @@ class CronJobGenerator:
             
             self._add_button_hover(yml_button, self.success_color, '#229954')
             
-            # Force scroll update after interface is created
             def update_scroll_after_creation():
                 try:
                     if hasattr(self, 'main_scrollable_container'):
@@ -599,7 +500,6 @@ class CronJobGenerator:
             cron_schedule_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
             cron_schedule_frame.pack(fill=tk.X, pady=(0, 15))
             
-            # Header
             schedule_header = tk.Frame(cron_schedule_frame, bg=self.header_bg, height=50)
             schedule_header.pack(fill=tk.X)
             
@@ -607,14 +507,12 @@ class CronJobGenerator:
                                      font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
             schedule_label.pack(pady=15)
             
-            # Content
             schedule_content = tk.Frame(cron_schedule_frame, bg=self.frame_bg)
             schedule_content.pack(fill=tk.X, padx=20, pady=20)
 
             cron_fields_frame = tk.Frame(schedule_content, bg=self.frame_bg)
             cron_fields_frame.pack(fill=tk.X, pady=(0, 15))
 
-            # Cron field configurations
             cron_defaults = {"Minute": "0", "Hour": "1", "Day of Month": "*", "Month": "*", "Day of Week": "5"}
             cron_options = {
                 "Minute": ['*'] + [str(i) for i in range(0, 60, 5)],
@@ -644,7 +542,6 @@ class CronJobGenerator:
                 except Exception as e:
                     print(f"Error creating cron field {label}: {e}")
 
-            # Help text for cron fields
             help_frame = tk.Frame(schedule_content, bg=self.frame_bg)
             help_frame.pack(fill=tk.X, pady=(10, 15))
             
@@ -654,7 +551,6 @@ class CronJobGenerator:
                                  fg="#7f8c8d", bg=self.frame_bg, justify=tk.LEFT, wraplength=900)
             help_label.pack(anchor="w")
 
-            # Cron preview
             preview_frame = tk.Frame(schedule_content, bg=self.bg_color, relief='solid', bd=1)
             preview_frame.pack(fill=tk.X, pady=(0, 0))
             
@@ -666,7 +562,6 @@ class CronJobGenerator:
                                          font=("Segoe UI", 11), fg=self.primary_color, bg=self.bg_color)
             cron_preview_label.pack(pady=(0, 10), padx=15, anchor="w")
             
-            # Initialize preview
             self.update_cron_preview()
         except Exception as e:
             print(f"Error building cron schedule section: {e}")
@@ -677,7 +572,6 @@ class CronJobGenerator:
             config_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
             config_frame.pack(fill=tk.X, pady=(0, 15))
             
-            # Header
             config_header = tk.Frame(config_frame, bg=self.header_bg, height=50)
             config_header.pack(fill=tk.X)
             
@@ -685,14 +579,12 @@ class CronJobGenerator:
                                    font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
             config_label.pack(pady=15)
             
-            # Content
             config_content = tk.Frame(config_frame, bg=self.frame_bg)
             config_content.pack(fill=tk.X, padx=20, pady=20)
             
             fields_grid = tk.Frame(config_content, bg=self.frame_bg)
             fields_grid.pack(fill=tk.X, pady=(0, 15))
 
-            # Configuration fields
             config_fields = [
                 ("Client", "client_name"),
                 ("Shortname", "short_identifier"),
@@ -738,7 +630,6 @@ class CronJobGenerator:
                 except Exception as e:
                     print(f"Error creating config field {label_text}: {e}")
 
-            # Add helpful tooltips/descriptions
             desc_frame = tk.Frame(config_content, bg=self.frame_bg)
             desc_frame.pack(fill=tk.X, pady=(10, 0))
             
@@ -757,7 +648,6 @@ class CronJobGenerator:
             additional_frame = tk.Frame(parent, bg=self.frame_bg, relief='solid', bd=1)
             additional_frame.pack(fill=tk.X, pady=(0, 15))
             
-            # Header
             additional_header = tk.Frame(additional_frame, bg=self.header_bg, height=50)
             additional_header.pack(fill=tk.X)
             
@@ -765,14 +655,12 @@ class CronJobGenerator:
                                        font=self.subtitle_font, bg=self.header_bg, fg=self.text_color)
             additional_label.pack(pady=15)
             
-            # Content
             additional_content = tk.Frame(additional_frame, bg=self.frame_bg)
             additional_content.pack(fill=tk.X, padx=20, pady=20)
             
             settings_frame = tk.Frame(additional_content, bg=self.frame_bg)
             settings_frame.pack(fill=tk.X, pady=(0, 15))
 
-            # Secret location
             secret_frame = tk.Frame(settings_frame, bg=self.frame_bg)
             secret_frame.pack(fill=tk.X, pady=5)
             
@@ -785,7 +673,6 @@ class CronJobGenerator:
                                           values=secret_options, state="readonly", width=30)
             secret_dropdown.pack(side=tk.LEFT, padx=5)
 
-            # Encryption
             encryption_frame = tk.Frame(settings_frame, bg=self.frame_bg)
             encryption_frame.pack(fill=tk.X, pady=5)
             
@@ -797,7 +684,6 @@ class CronJobGenerator:
                                               values=["True", "False"], state="readonly", width=30)
             encryption_dropdown.pack(side=tk.LEFT, padx=5)
 
-            # Restricted Client
             restricted_frame = tk.Frame(settings_frame, bg=self.frame_bg)
             restricted_frame.pack(fill=tk.X, pady=5)
             
@@ -809,7 +695,6 @@ class CronJobGenerator:
                                               values=["Yes", "No"], state="readonly", width=30)
             restricted_dropdown.pack(side=tk.LEFT, padx=5)
 
-            # Additional descriptions
             desc_frame = tk.Frame(additional_content, bg=self.frame_bg)
             desc_frame.pack(fill=tk.X, pady=(10, 0))
             
@@ -863,7 +748,6 @@ class CronJobGenerator:
             return "Custom cron schedule"
 
     def validate_inputs(self):
-        """Validate required fields before generating YAML"""
         try:
             required_fields = [
                 ('client_name', 'Client'), 
@@ -892,7 +776,6 @@ class CronJobGenerator:
                                    "\n".join(f"• {field}" for field in missing_fields))
                 return False
             
-            # Validate port is numeric
             try:
                 port_value = self.cron_fields.get('sftp_port', tk.Entry()).get().strip()
                 if port_value:
@@ -916,7 +799,6 @@ class CronJobGenerator:
             if not self.validate_inputs():
                 return
                 
-            # Get all field values with error handling
             data = {}
             for key, entry in self.cron_fields.items():
                 try:
@@ -925,7 +807,6 @@ class CronJobGenerator:
                     print(f"Error getting value for field {key}: {e}")
                     data[key] = ""
 
-            # Get cron values with error handling
             cron_values = {}
             for key, var in self.cron_vars.items():
                 try:
@@ -937,7 +818,6 @@ class CronJobGenerator:
             schedule = f"{cron_values.get('minute', '0')} {cron_values.get('hour', '1')} {cron_values.get('day_of_month', '*')} {cron_values.get('month', '*')} {cron_values.get('day_of_week', '5')}"
             cron_comment_text = self.cron_comment(**cron_values)
 
-            # Extract values with defaults
             client = data.get('client_name', '')
             shortname = data.get('short_identifier', '')
             integration = data.get('integration_name', '')
@@ -955,7 +835,6 @@ class CronJobGenerator:
             to_file = data.get('destination_filename', '')
             secret_location = self.secret_var.get()
 
-            # Build environment variables - AWS and system variables always use "integrations"
             env_vars = [
                 {"name": "AWS_S3_ACCESS_KEY", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "aws_s3_access_key"}}},
                 {"name": "AWS_S3_SECRET_KEY", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "aws_s3_secret_key"}}},
@@ -964,25 +843,21 @@ class CronJobGenerator:
                 {"name": "PLAY_SECRET", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "play_secret"}}},
                 {"name": "PROMETHEUS_USERNAME", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "prometheus_username"}}},
                 {"name": "PROMETHEUS_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "prometheus_password"}}},
-                # Add the missing PUSH_GATEWAY variables
                 {"name": "PUSH_GATEWAY_USERNAME", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "push_gateway_username"}}},
                 {"name": "PUSH_GATEWAY_PASSWORD", "valueFrom": {"secretKeyRef": {"name": "integrations", "key": "push_gateway_password"}}}
             ]
 
-            # Client-specific username and password use the selected secret location
             if username:
                 env_vars.append({"name": f"{username.upper()}", "valueFrom": {"secretKeyRef": {"name": secret_location, "key": f"{username.lower()}"}}})
             if password:
                 env_vars.append({"name": f"{password.upper()}", "valueFrom": {"secretKeyRef": {"name": secret_location, "key": f"{password.lower()}"}}})
 
-            # Encryption variables always use their specific secret names
             if encryption:
                 env_vars.extend([
                     {"name": "PASSPHRASE", "valueFrom": {"secretKeyRef": {"name": "gpg-passphrase", "key": "passphrase"}}},
                     {"name": "PGP_PRIVATE_KEY", "valueFrom": {"secretKeyRef": {"name": "gpg-private-key", "key": "private-key"}}}
                 ])
 
-            # Application configuration
             application_conf = f'''include "application.conf"
 
 worker = {{
@@ -1018,7 +893,6 @@ sqs = {{
 
 play.http.secret.key = ${{PLAY_SECRET}}'''
 
-            # Client JSON configuration
             client_json = {
                 "task": "get_client_files",
                 "client": client,
@@ -1051,7 +925,6 @@ play.http.secret.key = ${{PLAY_SECRET}}'''
                 "working_dir": "/tmp"
             }
 
-            # Generate complete Kubernetes YAML
             cronjob_yaml = f"""apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -1117,7 +990,6 @@ data:
 {self.indent_multiline(json.dumps(client_json, indent=2), 4)}
 """
 
-            # Save file
             default_filename = f"cronjob-{shortname.lower()}-{client.lower()}.yml"
             save_path = filedialog.asksaveasfilename(
                 defaultextension=".yml", 
@@ -1131,7 +1003,6 @@ data:
                     with open(save_path, 'w') as file:
                         file.write(cronjob_yaml)
                     
-                    # Show success message with summary
                     summary_msg = f"✅ Kubernetes CronJob YAML generated successfully!\n\n"
                     summary_msg += f"📁 File saved to: {save_path}\n\n"
                     summary_msg += f"📋 Configuration Summary:\n"
@@ -1157,7 +1028,6 @@ data:
             messagebox.showerror("Error", f"Failed to generate YAML configuration: {e}")
 
     def dict_to_yaml(self, data, indent=2):
-        """Convert environment variables list to YAML format with proper indentation"""
         try:
             lines = []
             for item in data:
@@ -1172,7 +1042,6 @@ data:
             return f"# Error generating environment variables: {e}"
 
     def indent_multiline(self, text, indent=2):
-        """Indent each line of multiline text"""
         try:
             return '\n'.join((' ' * indent) + line for line in text.splitlines())
         except Exception as e:

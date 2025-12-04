@@ -32,6 +32,10 @@ class AuthClient:
         self.permissions = {}
         self.is_admin = False
         self.can_s3_download = False
+        self.can_s3_upload = False
+        self.can_s3_delete = False
+        self.can_s3_create_folder = False
+        self.can_sqs_send = False
     
     def login(self, username, password):
         """Login and get permissions"""
@@ -49,6 +53,10 @@ class AuthClient:
                 self.is_admin = data.get("is_admin", False)
                 self.permissions = data.get("permissions", {})
                 self.can_s3_download = data.get("can_s3_download", False)
+                self.can_s3_upload = data.get("can_s3_upload", False)
+                self.can_s3_delete = data.get("can_s3_delete", False)
+                self.can_s3_create_folder = data.get("can_s3_create_folder", False)
+                self.can_sqs_send = data.get("can_sqs_send", False)
                 return True, data
             elif response.status_code == 401:
                 return False, "Invalid username or password"
@@ -121,6 +129,10 @@ class AuthClient:
         self.permissions = {}
         self.is_admin = False
         self.can_s3_download = False
+        self.can_s3_upload = False
+        self.can_s3_delete = False
+        self.can_s3_create_folder = False
+        self.can_sqs_send = False
     
     def has_permission(self, tab_name):
         """Check if user has permission for a tab"""
