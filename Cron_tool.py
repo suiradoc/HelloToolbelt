@@ -819,7 +819,7 @@ class CronJobGenerator:
             cron_comment_text = self.cron_comment(**cron_values)
 
             client = data.get('client_name', '')
-            shortname = data.get('short_identifier', '')
+            shortname = data.get('short_identifier', '').replace('_', '-')
             integration = data.get('integration_name', '')
             task_type = self.task_type_var.get()
             host = data.get('sftp_host', '')
@@ -1000,8 +1000,12 @@ data:
             
             if save_path:
                 try:
+                    # Remove all blank lines from the output
+                    lines = cronjob_yaml.splitlines()
+                    cleaned_yaml = '\n'.join(line for line in lines if line.strip()) + '\n'
+                    
                     with open(save_path, 'w') as file:
-                        file.write(cronjob_yaml)
+                        file.write(cleaned_yaml)
                     
                     summary_msg = f"✅ Kubernetes CronJob YAML generated successfully!\n\n"
                     summary_msg += f"📁 File saved to: {save_path}\n\n"

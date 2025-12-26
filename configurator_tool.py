@@ -1043,7 +1043,6 @@ class CSVConfigApp:
                 self.restricted_client_var = tk.BooleanVar(value=False)
                 self.integration_var = tk.StringVar(value="")
                 self.provider_var = tk.StringVar(value="")
-                self.email_static_var = tk.StringVar(value="")
             except Exception as e:
                 print(f"Error initializing variables: {e}")
                 raise
@@ -1060,8 +1059,7 @@ class CSVConfigApp:
                 ("All Members File", "members_var", True, "checkbutton"),
                 ("Restricted Client", "restricted_client_var", False, "checkbutton"),
                 ("Integration Name", "integration_var", ""),
-                ("health_plan_provider", "provider_var", ""),
-                ("email", "email_static_var", "")
+                ("health_plan_provider", "provider_var", "")
             ]
 
             for idx, field_data in enumerate(left_fields):
@@ -1132,13 +1130,6 @@ class CSVConfigApp:
                     elif var_name == "provider_var":
                         entry_frame = tk.Frame(fields_grid, bg=self.bg_color, relief='solid', bd=1)
                         widget = tk.Entry(entry_frame, textvariable=self.provider_var, width=28, 
-                                        font=self.text_font, bg=self.bg_color, fg=self.text_color, 
-                                        relief='flat', bd=0)
-                        widget.pack(padx=5, pady=3)
-                        widget = entry_frame
-                    elif var_name == "email_static_var":
-                        entry_frame = tk.Frame(fields_grid, bg=self.bg_color, relief='solid', bd=1)
-                        widget = tk.Entry(entry_frame, textvariable=self.email_static_var, width=28, 
                                         font=self.text_font, bg=self.bg_color, fg=self.text_color, 
                                         relief='flat', bd=0)
                         widget.pack(padx=5, pady=3)
@@ -1776,8 +1767,6 @@ class CSVConfigApp:
             fields_to_add = {}
             if self.provider_var.get().strip():
                 fields_to_add["health_plan_provider"] = self.provider_var.get()
-            if self.email_static_var.get().strip():
-                fields_to_add["email"] = self.email_static_var.get()
 
             if file_type == "Formatting":
                 config = {

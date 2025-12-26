@@ -776,6 +776,23 @@ class SQSMessageWidget(tk.Frame):
                                          fg=self.text_secondary)
         self.queue_info_label.pack(anchor='w', pady=(2, 0))
         
+        # Queue stats frame for message counts
+        self.queue_stats_frame = tk.Frame(url_frame, bg=self.frame_bg)
+        self.queue_stats_frame.pack(fill=tk.X, pady=(5, 0))
+        
+        self.queue_stats_label = tk.Label(self.queue_stats_frame, text="", 
+                                          font=('Segoe UI', 9), bg=self.frame_bg, 
+                                          fg=self.text_color, justify=tk.LEFT)
+        self.queue_stats_label.pack(side=tk.LEFT, anchor='w')
+        
+        self.refresh_stats_btn = tk.Button(self.queue_stats_frame, text="🔄", 
+                                           command=self._refresh_current_queue_stats,
+                                           bg=self.frame_bg, fg=self.text_color,
+                                           font=('Segoe UI', 8),
+                                           relief='flat', cursor='hand2',
+                                           padx=5, pady=0)
+        self.refresh_stats_btn.pack(side=tk.LEFT, padx=(10, 0))
+        
         # Message body input
         msg_frame = tk.Frame(content, bg=self.frame_bg)
         msg_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
@@ -879,8 +896,124 @@ class SQSMessageWidget(tk.Frame):
             is_fifo = queue_url.endswith('.fifo')
             queue_type = "FIFO" if is_fifo else "Standard"
             self.queue_info_label.config(text=f"📋 {queue_name} ({queue_type})")
+            
+            # Show loading state for stats
+            self.queue_stats_label.config(text="⏳ Loading queue stats...", fg=self.text_secondary)
+            
+            # Fetch queue attributes in background
+            self._fetch_queue_stats(queue_url)
         else:
             self.queue_info_label.config(text="")
+            self.queue_stats_label.config(text="")
+    
+    def _fetch_queue_stats(self, queue_url):
+        """Fetch queue attributes including message counts"""
+        if not BOTO3_AVAILABLE:
+            self.queue_stats_label.config(text="❌ boto3 not installed", fg=self.danger_color)
+            return
+        
+        def do_fetch():
+            try:
+                session_kwargs = {}
+                if self.profile and self.profile != "default":
+                    session_kwargs['profile_name'] = self.profile
+                
+                session = boto3.Session(**session_kwargs)
+                sqs_client = session.client('sqs')
+                
+                # Get queue attributes
+                response = sqs_client.get_queue_attributes(
+                    QueueUrl=queue_url,
+                    AttributeNames=[
+                        'ApproximateNumberOfMessages',
+                        'ApproximateNumberOfMessagesNotVisible',
+                        'ApproximateNumberOfMessagesDelayed',
+                        'RedrivePolicy',
+                        'RedriveAllowPolicy'
+                    ]
+                )
+                
+                attrs = response.get('Attributes', {})
+                
+                # Update UI from main thread
+                self.after(0, lambda: self._update_queue_stats(attrs, queue_url))
+                
+            except NoCredentialsError:
+                self.after(0, lambda: self._on_stats_error("AWS credentials not found"))
+            except ClientError as e:
+                error_msg = e.response['Error']['Message']
+                self.after(0, lambda: self._on_stats_error(error_msg))
+            except Exception as e:
+                self.after(0, lambda: self._on_stats_error(str(e)))
+        
+        # Run in background thread
+        fetch_thread = threading.Thread(target=do_fetch, daemon=True)
+        fetch_thread.start()
+    
+    def _update_queue_stats(self, attrs, queue_url):
+        """Update the queue stats display with fetched attributes"""
+        available = int(attrs.get('ApproximateNumberOfMessages', 0))
+        in_flight = int(attrs.get('ApproximateNumberOfMessagesNotVisible', 0))
+        delayed = int(attrs.get('ApproximateNumberOfMessagesDelayed', 0))
+        total = available + in_flight + delayed
+        
+        # Check if this is a DLQ (has redrive policy pointing to it) or has redrive policy
+        redrive_policy = attrs.get('RedrivePolicy', '')
+        is_dlq_source = bool(redrive_policy)  # This queue sends to a DLQ
+        
+        # Build stats text
+        stats_parts = []
+        
+        # Available messages (can be purged/processed)
+        if available > 0:
+            stats_parts.append(f"📬 Available: {available:,}")
+        else:
+            stats_parts.append(f"📭 Available: 0")
+        
+        # In-flight messages
+        if in_flight > 0:
+            stats_parts.append(f"✈️ In-flight: {in_flight:,}")
+        
+        # Delayed messages
+        if delayed > 0:
+            stats_parts.append(f"⏰ Delayed: {delayed:,}")
+        
+        # Total
+        stats_parts.append(f"📊 Total: {total:,}")
+        
+        # DLQ indicator
+        queue_name = queue_url.split('/')[-1] if '/' in queue_url else queue_url
+        is_likely_dlq = '-dlq' in queue_name.lower() or 'deadletter' in queue_name.lower()
+        
+        if is_likely_dlq and available > 0:
+            stats_parts.append(f"🔄 Can redrive: {available:,}")
+        
+        if available > 0:
+            stats_parts.append(f"🗑️ Can purge: {available:,}")
+        
+        stats_text = "  |  ".join(stats_parts)
+        
+        # Color based on message count
+        if available > 0:
+            fg_color = '#fd7e14'  # Orange - has messages
+        else:
+            fg_color = self.success_color  # Green - empty
+        
+        self.queue_stats_label.config(text=stats_text, fg=fg_color)
+    
+    def _on_stats_error(self, error_msg):
+        """Handle queue stats fetch error"""
+        display_error = error_msg[:40] + '...' if len(error_msg) > 40 else error_msg
+        self.queue_stats_label.config(text=f"❌ {display_error}", fg=self.danger_color)
+    
+    def _refresh_current_queue_stats(self):
+        """Manually refresh the current queue's stats"""
+        queue_url = self.queue_url_var.get()
+        if queue_url:
+            self.queue_stats_label.config(text="⏳ Refreshing...", fg=self.text_secondary)
+            self._fetch_queue_stats(queue_url)
+        else:
+            self.queue_stats_label.config(text="Select a queue first", fg=self.text_secondary)
     
     def refresh_queue_list(self):
         """Fetch available queues from AWS SQS"""
@@ -1168,6 +1301,10 @@ class SQSMessageWidget(tk.Frame):
             text=f"✅ Redrive started! Task: {task_handle[:20]}...", 
             fg=self.success_color
         )
+        # Refresh queue stats after a short delay (redrive takes time)
+        queue_url = self.queue_url_var.get()
+        if queue_url:
+            self.after(2000, lambda: self._fetch_queue_stats(queue_url))
     
     def _on_redrive_error(self, error_msg):
         """Handle redrive error"""
@@ -1257,6 +1394,10 @@ class SQSMessageWidget(tk.Frame):
             text="✅ Queue purged successfully!", 
             fg=self.success_color
         )
+        # Refresh queue stats
+        queue_url = self.queue_url_var.get()
+        if queue_url:
+            self._fetch_queue_stats(queue_url)
     
     def _on_purge_error(self, error_msg):
         """Handle purge error"""
@@ -1297,7 +1438,7 @@ class SQSMessageWidget(tk.Frame):
 class EligibilitySearchTool:
     def __init__(self, root):
         self.root = root
-        self.root.title("Eligibility Search Tool")
+        self.root.title("File Viewer")
         
         self.is_in_toolbelt = hasattr(root, '_title') and hasattr(root, 'pack')
         
@@ -1738,14 +1879,27 @@ class EligibilitySearchTool:
         
         self._show_analysis_popup("\n".join(report_lines))
 
+    def _center_popup(self, popup, width, height):
+        """Center a popup window on the parent window"""
+        popup.update_idletasks()
+        toplevel = self.root.winfo_toplevel()
+        win_x = toplevel.winfo_rootx()
+        win_y = toplevel.winfo_rooty()
+        win_width = toplevel.winfo_width()
+        win_height = toplevel.winfo_height()
+        x = win_x + (win_width // 2) - (width // 2)
+        y = win_y + (win_height // 2) - (height // 2)
+        popup.geometry(f"{width}x{height}+{x}+{y}")
+
     def _show_analysis_popup(self, report_text):
         popup = tk.Toplevel(self.root)
         popup.title("Bulk Analysis Results")
-        popup.geometry("600x500")
         popup.configure(bg=self.bg_color)
         
         popup.transient(self.root)
         popup.grab_set()
+        
+        self._center_popup(popup, 600, 500)
         
         main_frame = tk.Frame(popup, bg=self.bg_color, padx=20, pady=20)
         main_frame.pack(fill=tk.BOTH, expand=True)
@@ -1799,7 +1953,7 @@ class EligibilitySearchTool:
         header_icon = tk.Label(header_content, text="🔍", font=('Segoe UI', 20), bg=self.primary_color, fg='white')
         header_icon.pack(side=tk.LEFT, padx=(0, 10))
         
-        header_label = tk.Label(header_content, text="Eligibility Search Tool", 
+        header_label = tk.Label(header_content, text="File Viewer", 
                                font=('Segoe UI', 16, 'bold'), bg=self.primary_color, fg='white')
         header_label.pack(side=tk.LEFT, anchor='w')
         
@@ -2066,7 +2220,6 @@ class EligibilitySearchTool:
         
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Downloading from S3")
-        progress_window.geometry("500x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
@@ -2076,10 +2229,7 @@ class EligibilitySearchTool:
         
         progress_window.configure(bg=dialog_bg)
         
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - 250
-        y = (progress_window.winfo_screenheight() // 2) - 90
-        progress_window.geometry(f"500x180+{x}+{y}")
+        self._center_popup(progress_window, 500, 180)
         
         status_label = tk.Label(progress_window, text="Downloading from S3...", 
                             font=('Segoe UI', 11),
@@ -2193,7 +2343,6 @@ class EligibilitySearchTool:
         # Create progress dialog
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Uploading to S3")
-        progress_window.geometry("500x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
@@ -2203,10 +2352,7 @@ class EligibilitySearchTool:
         
         progress_window.configure(bg=dialog_bg)
         
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - 250
-        y = (progress_window.winfo_screenheight() // 2) - 90
-        progress_window.geometry(f"500x180+{x}+{y}")
+        self._center_popup(progress_window, 500, 180)
         
         status_label = tk.Label(progress_window, text="Uploading to S3...", 
                             font=('Segoe UI', 11),
@@ -2483,7 +2629,6 @@ class EligibilitySearchTool:
         # Create progress dialog
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Deleting from S3")
-        progress_window.geometry("500x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
@@ -2493,10 +2638,7 @@ class EligibilitySearchTool:
         
         progress_window.configure(bg=dialog_bg)
         
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - 250
-        y = (progress_window.winfo_screenheight() // 2) - 90
-        progress_window.geometry(f"500x180+{x}+{y}")
+        self._center_popup(progress_window, 500, 180)
         
         status_label = tk.Label(progress_window, text="Deleting from S3...", 
                             font=('Segoe UI', 11),
@@ -2586,7 +2728,6 @@ class EligibilitySearchTool:
         
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Downloading from S3")
-        progress_window.geometry("500x180")
         progress_window.transient(self.root)
         progress_window.grab_set()
         
@@ -2596,10 +2737,7 @@ class EligibilitySearchTool:
         
         progress_window.configure(bg=dialog_bg)
         
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - 250
-        y = (progress_window.winfo_screenheight() // 2) - 90
-        progress_window.geometry(f"500x180+{x}+{y}")
+        self._center_popup(progress_window, 500, 180)
         
         status_label = tk.Label(progress_window, text="Downloading from S3...", 
                             font=('Segoe UI', 11),
@@ -2690,7 +2828,6 @@ class EligibilitySearchTool:
     def _process_eligibility_file(self):
         progress_window = tk.Toplevel(self.root)
         progress_window.title("Loading File")
-        progress_window.geometry("500x280")  # Increased height for OK button
         progress_window.transient(self.root)
         progress_window.grab_set()
         
@@ -2700,10 +2837,7 @@ class EligibilitySearchTool:
         
         progress_window.configure(bg=dialog_bg)
         
-        progress_window.update_idletasks()
-        x = (progress_window.winfo_screenwidth() // 2) - 250
-        y = (progress_window.winfo_screenheight() // 2) - 140  # Adjusted for new height
-        progress_window.geometry(f"500x280+{x}+{y}")
+        self._center_popup(progress_window, 500, 280)
         
         title_label = tk.Label(progress_window, text="Processing File", 
                               font=('Segoe UI', 12, 'bold'),

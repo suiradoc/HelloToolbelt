@@ -22,7 +22,7 @@ except ImportError:
     URLLIB_AVAILABLE = False
 
 GITHUB_REPO = "suiradoc/HelloToolbelt"
-APP_VERSION = "1.4.3"  # Keep this in sync with self.version in MultiToolLauncher
+APP_VERSION = "1.5.1"  # Keep this in sync with self.version in MultiToolLauncher
 AUTO_UPDATE_ENABLED = True  # Set to False to disable auto-update checks
 
 try:
@@ -850,7 +850,7 @@ class SplashScreen:
         
         self.canvas.create_text(
             200, 175,
-            text="Version 1.1.3",
+            text="Version 1.5.1",
             font=("Segoe UI", 12),
             fill="#cccccc"
         )
@@ -1365,7 +1365,7 @@ class MultiToolLauncher:
                 'icon': '⏰'
             },
             {
-                'name': 'Eligibility Search',
+                'name': 'File Viewer',
                 'file': 'eligibility_tool.py',
                 'class': 'EligibilitySearchTool',
                 'description': 'Search and analyze eligibility data with age and term date validation',
@@ -2404,7 +2404,7 @@ class MultiToolLauncher:
                 self.log_error("Unexpected error reverting tier", e)
 
     def get_tools_for_tier(self):
-        tier_2_tools = ['Eligibility Search', 'Multi-File Column Search', 'Report Builder']
+        tier_2_tools = ['File Viewer', 'Multi-File Column Search', 'Report Builder']
         
         if self.current_tier == 'Tier 2':
             return [tool for tool in self.tools if tool['name'] in tier_2_tools]
@@ -2418,7 +2418,7 @@ class MultiToolLauncher:
         
         client_setup_tools = ['Config', 'CronJob', 'Base64']
         
-        file_tools = ['Eligibility Search', 'Multi-File Column Search', 'Report Builder']
+        file_tools = ['File Viewer', 'Multi-File Column Search', 'Report Builder']
         
         client_setup_configs = [tool for tool in tools_to_show if tool['name'] in client_setup_tools]
         file_tools_configs = [tool for tool in tools_to_show if tool['name'] in file_tools]
